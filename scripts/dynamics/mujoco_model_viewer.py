@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 os.environ.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
 
 import mujoco
@@ -7,7 +8,8 @@ import time
 import math
 
 # 替换成你自己的 .xml 模型路径
-model = mujoco.MjModel.from_xml_path("adam_pro/adam_pro.xml")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+model = mujoco.MjModel.from_xml_path(str(PROJECT_ROOT / "adam_pro" / "adam_pro.xml"))
 data = mujoco.MjData(model)
 mujoco.viewer.launch(model, data)
 # try:

@@ -15,6 +15,7 @@ MuJoCo侧（MJCF几何，m坐标系，完全独立）：
 两边各用各的几何，误差 = 建模参数/坐标系差异
 """
 import os
+from pathlib import Path
 import math
 import numpy as np
 import matplotlib.pyplot as plt
@@ -23,7 +24,7 @@ import mujoco.viewer
 from scipy.optimize import fsolve, brentq
 import time
 
-os.chdir('/home/r/Downloads/KirinArm-Design')
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 # ═══════════════════════════════════════════════════════
 # 1. 理论模型（解析侧，单位 mm）
@@ -114,8 +115,8 @@ def theory_gravity_torque(roll, pitch):
 # ═══════════════════════════════════════════════════════
 # 2. MuJoCo 加载
 # ═══════════════════════════════════════════════════════
-mjcf_path = "adam_pro/adam_pro.xml"
-model = mujoco.MjModel.from_xml_path(mjcf_path)
+mjcf_path = PROJECT_ROOT / "adam_pro" / "adam_pro.xml"
+model = mujoco.MjModel.from_xml_path(str(mjcf_path))
 data  = mujoco.MjData(model)
 print(f"nq={model.nq}  nv={model.nv}")
 

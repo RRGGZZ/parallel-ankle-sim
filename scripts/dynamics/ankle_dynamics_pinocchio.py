@@ -3,6 +3,7 @@
 使用 Meshcat 进行可视化（含连杆可视化 + 并联约束求解 + 动力学计算）
 """
 import os
+from pathlib import Path
 import numpy as np
 import pinocchio as pin
 from pinocchio.visualize import MeshcatVisualizer
@@ -10,12 +11,12 @@ import meshcat.geometry as mg
 from scipy.optimize import fsolve
 import time
 
-# 设置工作目录
-os.chdir('/home/r/Downloads/KirinArm-Design')
+# Resolve project root from this script location
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 # 从 MJCF 加载模型
-mjcf_path = "adam_pro/adam_pro.xml"
-model, collision_model, visual_model = pin.buildModelsFromMJCF(mjcf_path)
+mjcf_path = PROJECT_ROOT / "adam_pro" / "adam_pro.xml"
+model, collision_model, visual_model = pin.buildModelsFromMJCF(str(mjcf_path))
 data = model.createData()
 
 print(f"模型名称: {model.name}")

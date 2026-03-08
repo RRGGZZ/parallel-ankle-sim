@@ -1,100 +1,27 @@
+"""
+Ankle Kinematics Analysis Plotter
+================================
+
+Generates plots for angle mapping, speed mapping, and torque mapping
+of the parallel ankle mechanism.
+
+Usage:
+    python scripts/kinematics/plot_ankle_data.py
+"""
+
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+
+# Use non-interactive backend for headless environments
+import matplotlib
+matplotlib.use('Agg')
+
 import numpy as np
 import math
 import matplotlib.pyplot as plt
 
-
-class CustomAnkleKinematics:
-    def __init__(self):
-        self.r1, self.l1, self.h1, self.d1 = 40.00, 280.00, 15.00, 37.10
-        self.r2, self.l2, self.h2, self.d2 = 40.00, 208.00, 33.00, 35.00
-        self.h3, self.d3 = 31.50, 47.00
-
-        self.th1, self.th2, self.th3, self.th4 = 0.51, 1.83, 0.57, 1.92
-
-        self.C1_w = np.array([self.d1,  (self.d3+self.d2)/4, -self.h1])
-        self.C2_w = np.array([self.d1, -(self.d2+self.d3)/4, -self.h1])
-
-        alpha1 = np.pi - self.th2
-        B1_zero = self.C1_w + np.array([-self.l1*np.cos(alpha1), 0, self.l1*np.sin(alpha1)])
-        self.A1 = B1_zero + np.array([self.r1*np.cos(self.th1), 0, self.r1*np.sin(self.th1)])
-
-        alpha2 = np.pi - self.th4
-        B2_zero = self.C2_w + np.array([-self.l2*np.cos(alpha2), 0, self.l2*np.sin(alpha2)])
-        self.A2 = B2_zero + np.array([self.r2*np.cos(self.th3), 0, self.r2*np.sin(self.th3)])
-
-    def calc_R(self, tx, ty):
-        cx, sx = np.cos(tx), np.sin(tx)
-        cy, sy = np.cos(ty), np.sin(ty)
-        return np.array([[cy, sx*sy, cx*sy],
-                         [0,  cx,   -sx   ],
-                         [-sy, cy*sx, cx*cy]])
-
-    def IK(self, theta_x, theta_y):
-        R = self.calc_R(theta_x, theta_y)
-        C1_O = R @ self.C1_w
-        C2_O = R @ self.C2_w
-        q_out = []
-        for A, C, r, l in [(self.A1, C1_O, self.r1, self.l1),
-                            (self.A2, C2_O, self.r2, self.l2)]:
-            U, V, W = A[0]-C[0], A[1]-C[1], A[2]-C[2]
-            K1, K2  = 2*r*W, 2*r*U
-            K3      = l**2 - r**2 - U**2 - V**2 - W**2
-            sv = K1**2 + K2**2 - K3**2
-            if sv < 0:
-                return None, None
-            q = math.atan2(K3, -math.sqrt(sv)) - math.atan2(K2, K1)
-            q_out.append(q)
-        return q_out[0], q_out[1]
-
-    def calc_Jacobians(self, tx, ty, q1=None, q2=None):
-        if q1 is None or q2 is None:
-            q1, q2 = self.IK(tx, ty)
-        if q1 is None:
-            return None, None
-
-        cx, sx = np.cos(tx), np.sin(tx)
-        cy, sy = np.cos(ty), np.sin(ty)
-
-        R = self.calc_R(tx, ty)
-        C1_O, C2_O = R @ self.C1_w, R @ self.C2_w
-
-        B1 = self.A1 + np.array([self.r1 * np.cos(q1), 0, self.r1 * np.sin(q1)])
-        B2 = self.A2 + np.array([self.r2 * np.cos(q2), 0, self.r2 * np.sin(q2)])
-
-        L1, L2 = B1 - C1_O, B2 - C2_O
-
-        v_B1 = np.array([-self.r1 * np.sin(q1), 0, self.r1 * np.cos(q1)])
-        v_B2 = np.array([-self.r2 * np.sin(q2), 0, self.r2 * np.cos(q2)])
-
-        a11 = np.dot(L1, v_B1)
-        a22 = np.dot(L2, v_B2)
-
-        if abs(a11) < 1e-6 or abs(a22) < 1e-6:
-            return None, None
-        A_mat = np.diag([a11, a22])
-
-        dR_dtx = np.array([[0,     cx*sy,  -sx*sy],
-                            [0,     -sx,    -cx   ],
-                            [0,     cx*cy,  -sx*cy]])
-        dR_dty = np.array([[-sy,   sx*cy,   cx*cy ],
-                            [0,    0,       0     ],
-                            [-cy, -sx*sy,  -cx*sy ]])
-
-        dC1_dtx, dC1_dty = dR_dtx @ self.C1_w, dR_dty @ self.C1_w
-        dC2_dtx, dC2_dty = dR_dtx @ self.C2_w, dR_dty @ self.C2_w
-
-        B_mat = np.array([[np.dot(L1, dC1_dtx), np.dot(L1, dC1_dty)],
-                           [np.dot(L2, dC2_dtx), np.dot(L2, dC2_dty)]])
-
-        J_vel = np.array([[B_mat[0, 0] / a11, B_mat[0, 1] / a11],
-                           [B_mat[1, 0] / a22, B_mat[1, 1] / a22]])
-
-        try:
-            J_tau = np.linalg.solve(J_vel.T, np.eye(2))
-        except np.linalg.LinAlgError:
-            return None, None
-
-        return J_vel, J_tau
+from pndbotics_ankle import CustomAnkleKinematics
 
 
 def plot_analysis():

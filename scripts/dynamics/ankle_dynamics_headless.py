@@ -56,10 +56,10 @@ for name in site_names:
         print(f"  未找到: {name}")
 
 # ─────────────────────────────────────────────
-# 并联机构约束参数
+# 并联机构约束参数 (与 CustomAnkleKinematics 一致: 280mm, 208mm)
 # ─────────────────────────────────────────────
-L_LEFT_1  = 0.3097
-L_LEFT_2  = 0.2386
+L_LEFT_1  = 0.280
+L_LEFT_2  = 0.208
 
 # ─────────────────────────────────────────────
 # 约束求解函数
@@ -108,117 +108,78 @@ def solve_parallel_fk(q_base, motor1_left=None, motor2_left=None):
 # ─────────────────────────────────────────────
 
 def compute_ankle_jacobian_numerical(q_config, delta=1e-7):
-    """数值计算脚踝并联机构的雅可比矩阵"""
     motor_idx = [ankle_motor_left_1_idx, ankle_motor_left_2_idx]
-    frame_b = "ankleLeft_B1"
-    
-    if frame_b not in frame_ids:
-        return np.zeros((6, 2))
-    
-    J = np.zeros((6, 2))
-    
+    J_m2j = np.zeros((2, 2))
+
     for motor_i, m_idx in enumerate(motor_idx):
         # 正向扰动
         q_plus = q_config.copy()
         q_plus[m_idx] += delta
         q_plus = solve_parallel_fk(q_plus)
-        pin.forwardKinematics(model, data, q_plus)
-        pin.updateFramePlacements(model, data)
-        p_b_plus = data.oMf[frame_ids[frame_b]].translation.copy()
-        R_plus = data.oMf[frame_ids[frame_b]].rotation.copy()
-        
+
         # 负向扰动
         q_minus = q_config.copy()
         q_minus[m_idx] -= delta
         q_minus = solve_parallel_fk(q_minus)
-        pin.forwardKinematics(model, data, q_minus)
-        pin.updateFramePlacements(model, data)
-        p_b_minus = data.oMf[frame_ids[frame_b]].translation.copy()
-        R_minus = data.oMf[frame_ids[frame_b]].rotation.copy()
-        
-        # 线速度微分
-        dp_dm = (p_b_plus - p_b_minus) / (2.0 * delta)
-        J[0:3, motor_i] = dp_dm
-        
-        # 角速度微分
-        dR_dm = (R_plus - R_minus) / (2.0 * delta)
-        skew_omega = R_minus.T @ dR_dm / delta
-        omega_approx = np.array([skew_omega[2, 1], skew_omega[0, 2], skew_omega[1, 0]])
-        J[3:6, motor_i] = omega_approx
-    
-    return J
+
+        pitch_plus = q_plus[ankle_pitch_left_idx]
+        roll_plus = q_plus[ankle_roll_left_idx]
+        pitch_minus = q_minus[ankle_pitch_left_idx]
+        roll_minus = q_minus[ankle_roll_left_idx]
+
+        J_m2j[0, motor_i] = (pitch_plus - pitch_minus) / (2.0 * delta)
+        J_m2j[1, motor_i] = (roll_plus - roll_minus) / (2.0 * delta)
+
+    return J_m2j
 
 def compute_mass_matrix_ankle(q_config):
-    """计算脚踝关节的质量矩阵"""
-    J = compute_ankle_jacobian_numerical(q_config)
-    m_foot = 0.5
-    J_pos = J[0:3, :]
-    
-    try:
-        M_motor = np.linalg.inv(J_pos).T @ m_foot * np.eye(3) @ np.linalg.inv(J_pos)
-    except np.linalg.LinAlgError:
-        M_motor = np.eye(2)
-    
+    J_m2j = compute_ankle_jacobian_numerical(q_config)
+
+    pin.computeAllTerms(model, data, q_config, np.zeros(model.nv))
+    M_full = data.M.copy()
+
+    pitch_v_idx = model.joints[model.getJointId("anklePitch_Left")].idx_v
+    roll_v_idx = model.joints[model.getJointId("ankleRoll_Left")].idx_v
+    idx = [pitch_v_idx, roll_v_idx]
+    M_joint = M_full[np.ix_(idx, idx)]
+
+    M_motor = J_m2j.T @ M_joint @ J_m2j
     return M_motor
 
 def compute_coriolis_gravity(q_config, qd_config):
-    """计算科氏力和重力补偿力矩"""
-    # 使用computeAllTerms计算动力学
-    pin.computeAllTerms(model, data, q_config, qd_config)
-    
-    # 获取速度索引
+    qd_local = qd_config.copy()
+    motor_v_1_idx = model.joints[model.getJointId("ankleMotor_Left_1")].idx_v
+    motor_v_2_idx = model.joints[model.getJointId("ankleMotor_Left_2")].idx_v
     pitch_v_idx = model.joints[model.getJointId("anklePitch_Left")].idx_v
     roll_v_idx = model.joints[model.getJointId("ankleRoll_Left")].idx_v
-    
-    # 计算重力向量  tau_g = M * 0 + c_g + g
-    # 简化：直接数值计算，通过两次FK
-    q_offset = q_config.copy()
-    delta = 1e-7
-    
-    # 计算势能梯度（等价于重力）
-    # g = -dU/dq，其中U是重力势能
-    tau_gravity = np.zeros(2)
-    
-    # 第一个关节的重力
-    q_plus = q_config.copy()
-    q_plus[pitch_v_idx] += delta
-    pin.computeAllTerms(model, data, q_plus, np.zeros(model.nv))
-    U_plus_pitch = pin.computePotentialEnergy(model, data)
-    
-    q_minus = q_config.copy()
-    q_minus[pitch_v_idx] -= delta
-    pin.computeAllTerms(model, data, q_minus, np.zeros(model.nv))
-    U_minus_pitch = pin.computePotentialEnergy(model, data)
-    
-    tau_gravity[0] = -(U_plus_pitch - U_minus_pitch) / (2 * delta)
-    
-    # 第二个关节的重力
-    q_plus = q_config.copy()
-    q_plus[roll_v_idx] += delta
-    pin.computeAllTerms(model, data, q_plus, np.zeros(model.nv))
-    U_plus_roll = pin.computePotentialEnergy(model, data)
-    
-    q_minus = q_config.copy()
-    q_minus[roll_v_idx] -= delta
-    pin.computeAllTerms(model, data, q_minus, np.zeros(model.nv))
-    U_minus_roll = pin.computePotentialEnergy(model, data)
-    
-    tau_gravity[1] = -(U_plus_roll - U_minus_roll) / (2 * delta)
-    
-    # 科氏力的计算可以简化为在此忽略（在低速时较小）
-    # 实际项目中可通过 C @ qd获取
-    
-    return tau_gravity
+
+    J_m2j = compute_ankle_jacobian_numerical(q_config)
+    motor_qd = np.array([qd_local[motor_v_1_idx], qd_local[motor_v_2_idx]])
+    joint_qd = J_m2j @ motor_qd
+    qd_local[pitch_v_idx] = joint_qd[0]
+    qd_local[roll_v_idx] = joint_qd[1]
+
+    pin.computeAllTerms(model, data, q_config, qd_local)
+    nle = data.nle.copy()
+    tau_joint = np.array([nle[pitch_v_idx], nle[roll_v_idx]])
+
+    J_m2j = compute_ankle_jacobian_numerical(q_config)
+    tau_motor = J_m2j.T @ tau_joint
+    return tau_motor
 
 def compute_inverse_dynamics_ankle(q_config, qd_config, qdd_config):
     """计算脚踝的逆动力学"""
     M = compute_mass_matrix_ankle(q_config)
     c_g = compute_coriolis_gravity(q_config, qd_config)
-    # 获取电机对应的速度索引
-    motor_v_1_idx = model.joints[model.getJointId("ankleMotor_Left_1")].idx_v
-    motor_v_2_idx = model.joints[model.getJointId("ankleMotor_Left_2")].idx_v
-    motor_qdd = np.array([qdd_config[motor_v_1_idx],
-                          qdd_config[motor_v_2_idx]])
+    pitch_v_idx = model.joints[model.getJointId("anklePitch_Left")].idx_v
+    roll_v_idx = model.joints[model.getJointId("ankleRoll_Left")].idx_v
+    joint_qdd = np.array([qdd_config[pitch_v_idx], qdd_config[roll_v_idx]])
+
+    J_m2j = compute_ankle_jacobian_numerical(q_config)
+    try:
+        motor_qdd = np.linalg.solve(J_m2j, joint_qdd)
+    except np.linalg.LinAlgError:
+        motor_qdd = np.linalg.lstsq(J_m2j, joint_qdd, rcond=None)[0]
     tau = M @ motor_qdd + c_g
     return tau
 
@@ -246,11 +207,10 @@ print("\n" + "="*70)
 print("=== 动力学计算演示 ===")
 print("="*70)
 
-# 计算雅可比矩阵
 J = compute_ankle_jacobian_numerical(q)
-print("\n雅可比矩阵 J (位置分量，前3行):")
-print(f"{J[0:3, :]}")
-print(f"条件数: {np.linalg.cond(J[0:3, :]):.4f}")
+print("\n雅可比矩阵 J_m2j (d[pitch,roll]/d[motor1,motor2]):")
+print(f"{J}")
+print(f"条件数: {np.linalg.cond(J):.4f}")
 
 # 计算质量矩阵
 M = compute_mass_matrix_ankle(q)
@@ -278,7 +238,7 @@ print("-"*72)
 for motor_angle in motor_angles_range:
     q_test = solve_parallel_fk(q, motor1_left=motor_angle, motor2_left=-motor_angle)
     J = compute_ankle_jacobian_numerical(q_test)
-    cond_num = np.linalg.cond(J[0:3, :])
+    cond_num = np.linalg.cond(J)
     M = compute_mass_matrix_ankle(q_test)
     eigs = np.linalg.eigvals(M)
     

@@ -1,18 +1,46 @@
 """
-Ankle Joint Armature Calculator (Parallel Mechanism)
-=====================================================
-通过雅可比矩阵将电机转子惯量反射到关节空间，
-计算并联踝关节机构各轴的等效 armature。
+Ankle Joint Armature Calculator
+==============================
 
-公式：
+Computes the reflected motor inertia (armature) for each joint axis
+using the Jacobian matrix of the parallel ankle mechanism.
+
+Formula:
     I_arm = Σ_i (k_vel_i)² × I_motor
-    k_vel = J_vel @ e_axis   （每个电机对该关节轴的速度传动比）
+    k_vel = J_vel @ e_axis
+
+Usage:
+    python scripts/kinematics/ankle_armature.py
 """
+
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+
+# Use non-interactive backend for headless environments
+import matplotlib
+matplotlib.use('Agg')
 
 import numpy as np
 import math
 import matplotlib.pyplot as plt
 
+from pndbotics_ankle import CustomAnkleKinematics
+
+
+# ══════════════════════════════════════════════════════════════════════
+# User Parameters
+# ══════════════════════════════════════════════════════════════════════
+I_MOTOR = 0.0549        # kg·m²  Motor rotor inertia (single motor)
+
+rad2deg = 180.0 / np.pi
+ROLL_RANGE_DEG  = (-0.35 * rad2deg, 0.35 * rad2deg)   # Roll  limits ±0.35 rad (±20°)
+PITCH_RANGE_DEG = (-1.0  * rad2deg, 0.35 * rad2deg)   # Pitch limits -1~+0.35 rad (-57.3°~+20°)
+N_SCAN = 120                  # Number of scan points
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Armature Calculation
 # ══════════════════════════════════════════════════════════════════════
 #  用户参数
 # ══════════════════════════════════════════════════════════════════════

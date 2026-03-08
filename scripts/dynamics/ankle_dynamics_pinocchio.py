@@ -82,13 +82,12 @@ for name in site_names:
         print(f"  未找到: {name}")
 
 # ─────────────────────────────────────────────
-# 并联机构约束参数（来自 MJCF springlength）
-# 弹簧刚度极大时 springlength 即等效为刚性连杆长度
+# 并联机构约束参数 (与 CustomAnkleKinematics 一致: 280mm, 208mm)
 # ─────────────────────────────────────────────
-L_LEFT_1  = 0.3097   # ankle_link_left_1
-L_LEFT_2  = 0.2386   # ankle_link_left_2
-L_RIGHT_1 = 0.3097   # ankle_link_right_1
-L_RIGHT_2 = 0.2386   # ankle_link_right_2
+L_LEFT_1  = 0.280
+L_LEFT_2  = 0.208
+L_RIGHT_1 = 0.280
+L_RIGHT_2 = 0.208
 
 # ─────────────────────────────────────────────
 # 并联机构正运动学约束求解

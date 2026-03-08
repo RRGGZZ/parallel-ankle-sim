@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pndbotics-ankle"
+version = "1.0.0"
+description = "Parallel ankle mechanism simulation for academic research"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    {name = "PnDBotics Research Team"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "numpy",
+    "scipy",
+]
+
+[project.optional-dependencies]
+viz = [
+    "matplotlib",
+    "mujoco",
+    "pin",
+    "meshcat",
+]
+docs = [
+    "sphinx",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

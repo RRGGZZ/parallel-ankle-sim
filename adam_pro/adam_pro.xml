@@ -113,8 +113,8 @@
                   <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.752941 0.752941 0.752941 1" mesh="toeLeft" />
                   <geom type="capsule" fromto="0 0 0 0.0371 0.0205 -0.015" size="0.004" rgba="0.1 0.8 1 0.8" />
                   <geom type="capsule" fromto="0 0 0 0.0371 -0.0205 -0.015" size="0.004" rgba="0.1 0.8 1 0.8" />
-                  <site name="ankleToeLeft_C1" pos="0.0371 0.0205 -0.015" size="0.003" rgba="0.1 0.8 1 1" />
-                  <site name="ankleToeLeft_C2" pos="0.0371 -0.0205 -0.015" size="0.003" rgba="0.1 0.8 1 1" />
+<site name="ankleToeLeft_C1" pos="0.0293 0.0205 0.0137" size="0.003" rgba="0.1 0.8 1 1" />
+  <site name="ankleToeLeft_C2" pos="0.0044 -0.0205 0.0077" size="0.003" rgba="0.1 0.8 1 1" />
                   <geom name="toe_left" size="0.12 0.05 0.01" pos="0.05 0 -0.055" type="box" rgba="1 0 0 0" />
                 </body>
               </body>
@@ -167,8 +167,8 @@
                   <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.752941 0.752941 0.752941 1" mesh="toeRight" />
                   <geom type="capsule" fromto="0 0 0 0.0371 0.0205 -0.015" size="0.004" rgba="0.1 0.8 1 0.8" />
                   <geom type="capsule" fromto="0 0 0 0.0371 -0.0205 -0.015" size="0.004" rgba="0.1 0.8 1 0.8" />
-                  <site name="ankleToeRight_C1" pos="0.0371 -0.0205 -0.015" size="0.003" rgba="0.1 0.8 1 1" />
-                  <site name="ankleToeRight_C2" pos="0.0371 0.0205 -0.015" size="0.003" rgba="0.1 0.8 1 1" />
+<site name="ankleToeRight_C1" pos="0.0293 -0.0205 0.0137" size="0.003" rgba="0.1 0.8 1 1" />
+  <site name="ankleToeRight_C2" pos="0.0110 0.0205 0.0093" size="0.003" rgba="0.1 0.8 1 1" />
                   <geom name="toe_right" size="0.12 0.05 0.01" pos="0.05 0 -0.055" type="box" rgba="1 0 0 0" />
                 </body>
               </body>
@@ -496,19 +496,19 @@
   </actuator>
 
   <tendon>
-    <spatial name="ankle_link_left_1" width="0.004" rgba="1 0.5 0.1 1" limited="false" springlength="0.3097" stiffness="80000" damping="800">
+    <spatial name="ankle_link_left_1" width="0.004" rgba="1 0.5 0.1 1" limited="false" springlength="0.280" stiffness="80000" damping="800">
       <site site="ankleLeft_B1" />
       <site site="ankleToeLeft_C1" />
     </spatial>
-    <spatial name="ankle_link_left_2" width="0.004" rgba="1 0.5 0.1 1" limited="false" springlength="0.2386" stiffness="80000" damping="800">
+    <spatial name="ankle_link_left_2" width="0.004" rgba="1 0.5 0.1 1" limited="false" springlength="0.208" stiffness="80000" damping="800">
       <site site="ankleLeft_B2" />
       <site site="ankleToeLeft_C2" />
     </spatial>
-    <spatial name="ankle_link_right_1" width="0.004" rgba="1 0.5 0.1 1" limited="false" springlength="0.3097" stiffness="80000" damping="800">
+    <spatial name="ankle_link_right_1" width="0.004" rgba="1 0.5 0.1 1" limited="false" springlength="0.280" stiffness="80000" damping="800">
       <site site="ankleRight_B1" />
       <site site="ankleToeRight_C1" />
     </spatial>
-    <spatial name="ankle_link_right_2" width="0.004" rgba="1 0.5 0.1 1" limited="false" springlength="0.2386" stiffness="80000" damping="800">
+    <spatial name="ankle_link_right_2" width="0.004" rgba="1 0.5 0.1 1" limited="false" springlength="0.208" stiffness="80000" damping="800">
       <site site="ankleRight_B2" />
       <site site="ankleToeRight_C2" />
     </spatial>

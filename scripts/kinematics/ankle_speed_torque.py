@@ -1,24 +1,62 @@
+"""
+Motor Speed-Torque Curve Mapping to Joint Space
+==============================================
+
+Maps motor speed-torque characteristics to joint space capabilities
+for the parallel ankle mechanism.
+
+Usage:
+    python scripts/kinematics/ankle_speed_torque.py
+"""
+
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+
+# Use non-interactive backend for headless environments
+import matplotlib
+matplotlib.use('Agg')
+
 import numpy as np
 import math
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-from matplotlib.patches import FancyArrowPatch
 
-# ── 电机参数（从图中读取）────────────────────────────────────────────
-TAU_PEAK       = 46.0   # Nm  峰值扭矩
-TAU_CONT       = 18.0   # Nm  持续扭矩
-RPM_CORNER     = 55.0   # RPM 拐点转速
-RPM_MAX        = 80.0   # RPM 最大转速
+from pndbotics_ankle import CustomAnkleKinematics
 
-# RPM → rad/s
-def rpm2rads(rpm):
+
+# ── Motor Parameters (from motor datasheet) ────────────────────────────
+TAU_PEAK       = 46.0   # Nm  Peak torque
+TAU_CONT       = 18.0   # Nm  Continuous torque
+RPM_CORNER     = 55.0   # RPM Corner speed
+RPM_MAX        = 80.0   # RPM Maximum speed
+
+
+def rpm2rads(rpm: float) -> float:
+    """Convert RPM to rad/s."""
     return rpm * 2 * math.pi / 60
 
-W_CORNER = rpm2rads(RPM_CORNER)   # ≈ 5.76 rad/s
-W_MAX    = rpm2rads(RPM_MAX)      # ≈ 8.38 rad/s
 
-def motor_torque_limit(omega, tau_flat):
-    """给定电机转速 |omega| (rad/s)，返回该工况下的最大扭矩（线性 speed-torque 模型）。"""
+W_CORNER = rpm2rads(RPM_CORNER)   # ≈ 5.76 rad/s
+W_MAX    = rpm2rads(RPM_MAX)       # ≈ 8.38 rad/s
+
+
+def motor_torque_limit(omega: float, tau_flat: float) -> float:
+    """
+    Compute maximum motor torque at given speed using linear speed-torque model.
+    
+    Parameters
+    ----------
+    omega : float
+        Motor angular velocity (rad/s)
+    tau_flat : float
+        Maximum torque at low speed (Nm)
+    
+    Returns
+    -------
+    float
+        Available torque at given speed (Nm)
+    """
     omega = abs(omega)
     if omega <= W_CORNER:
         return tau_flat
@@ -28,95 +66,7 @@ def motor_torque_limit(omega, tau_flat):
         return 0.0
 
 
-# ── 踝关节并联机构运动学（与原脚本一致）────────────────────────────
-class CustomAnkleKinematics:
-    def __init__(self):
-        self.r1, self.l1, self.h1, self.d1 = 40.00, 280.00, 15.00, 37.10
-        self.r2, self.l2, self.h2, self.d2 = 40.00, 208.00, 33.00, 35.00
-        self.h3, self.d3 = 31.50, 47.00
-        self.th1, self.th2, self.th3, self.th4 = 0.51, 1.83, 0.57, 1.92
-
-        self.C1_w = np.array([self.d1,  (self.d3+self.d2)/4, -self.h1])
-        self.C2_w = np.array([self.d1, -(self.d2+self.d3)/4, -self.h1])
-
-        alpha1 = np.pi - self.th2
-        B1_zero = self.C1_w + np.array([-self.l1*np.cos(alpha1), 0, self.l1*np.sin(alpha1)])
-        self.A1 = B1_zero + np.array([self.r1*np.cos(self.th1), 0, self.r1*np.sin(self.th1)])
-
-        alpha2 = np.pi - self.th4
-        B2_zero = self.C2_w + np.array([-self.l2*np.cos(alpha2), 0, self.l2*np.sin(alpha2)])
-        self.A2 = B2_zero + np.array([self.r2*np.cos(self.th3), 0, self.r2*np.sin(self.th3)])
-
-    def calc_R(self, tx, ty):
-        cx, sx = np.cos(tx), np.sin(tx)
-        cy, sy = np.cos(ty), np.sin(ty)
-        return np.array([[cy, sx*sy, cx*sy],
-                         [0,  cx,   -sx   ],
-                         [-sy, cy*sx, cx*cy]])
-
-    def IK(self, theta_x, theta_y):
-        R = self.calc_R(theta_x, theta_y)
-        C1_O = R @ self.C1_w
-        C2_O = R @ self.C2_w
-        q_out = []
-        for A, C, r, l in [(self.A1, C1_O, self.r1, self.l1),
-                            (self.A2, C2_O, self.r2, self.l2)]:
-            U, V, W = A[0]-C[0], A[1]-C[1], A[2]-C[2]
-            K1, K2  = 2*r*W, 2*r*U
-            K3      = l**2 - r**2 - U**2 - V**2 - W**2
-            sv = K1**2 + K2**2 - K3**2
-            if sv < 0:
-                return None, None
-            q = math.atan2(K3, -math.sqrt(sv)) - math.atan2(K2, K1)
-            q_out.append(q)
-        return q_out[0], q_out[1]
-
-    def calc_Jacobians(self, tx, ty, q1=None, q2=None):
-        if q1 is None or q2 is None:
-            q1, q2 = self.IK(tx, ty)
-        if q1 is None:
-            return None, None
-
-        cx, sx = np.cos(tx), np.sin(tx)
-        cy, sy = np.cos(ty), np.sin(ty)
-        R = self.calc_R(tx, ty)
-        C1_O, C2_O = R @ self.C1_w, R @ self.C2_w
-
-        B1 = self.A1 + np.array([self.r1 * np.cos(q1), 0, self.r1 * np.sin(q1)])
-        B2 = self.A2 + np.array([self.r2 * np.cos(q2), 0, self.r2 * np.sin(q2)])
-        L1, L2 = B1 - C1_O, B2 - C2_O
-
-        v_B1 = np.array([-self.r1 * np.sin(q1), 0, self.r1 * np.cos(q1)])
-        v_B2 = np.array([-self.r2 * np.sin(q2), 0, self.r2 * np.cos(q2)])
-
-        a11 = np.dot(L1, v_B1)
-        a22 = np.dot(L2, v_B2)
-        if abs(a11) < 1e-6 or abs(a22) < 1e-6:
-            return None, None
-
-        dR_dtx = np.array([[0,    cx*sy, -sx*sy],
-                            [0,   -sx,   -cx   ],
-                            [0,    cx*cy,-sx*cy]])
-        dR_dty = np.array([[-sy,  sx*cy, cx*cy ],
-                            [0,   0,     0     ],
-                            [-cy,-sx*sy,-cx*sy ]])
-
-        dC1_dtx, dC1_dty = dR_dtx @ self.C1_w, dR_dty @ self.C1_w
-        dC2_dtx, dC2_dty = dR_dtx @ self.C2_w, dR_dty @ self.C2_w
-
-        B_mat = np.array([[np.dot(L1, dC1_dtx), np.dot(L1, dC1_dty)],
-                           [np.dot(L2, dC2_dtx), np.dot(L2, dC2_dty)]])
-
-        J_vel = np.array([[B_mat[0,0]/a11, B_mat[0,1]/a11],
-                           [B_mat[1,0]/a22, B_mat[1,1]/a22]])
-        try:
-            J_tau = np.linalg.solve(J_vel.T, np.eye(2))
-        except np.linalg.LinAlgError:
-            return None, None
-        return J_vel, J_tau
-
-
-# ── 核心：将电机 speed-torque 曲线映射到关节空间 ─────────────────────
+# ── Map motor speed-torque curve to joint space ───────────────────────
 def joint_speed_torque_curve(J_vel, J_tau, axis: int, tau_flat: float, n_pts=300):
     """
     给定雅可比矩阵和电机扭矩限制，计算关节速度-扭矩边界曲线。

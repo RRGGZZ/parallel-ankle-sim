@@ -1,30 +1,86 @@
-# 脚踝并联机构动力学说明
+# Dynamics Documentation
 
-本文档对应 `scripts/dynamics/` 下的脚本整理说明。
+This document describes the dynamics-related scripts in `scripts/dynamics/`.
 
-## 功能概述
+## Overview
 
-当前动力学相关脚本包含：
+The dynamics scripts provide comprehensive analysis of the parallel ankle mechanism using both theoretical models and physics engine simulations.
 
-- `ankle_dynamics_pinocchio.py`：Pinocchio + Meshcat 可视化版
-- `ankle_dynamics_headless.py`：Pinocchio 纯数值/无可视化版
-- `ankle_dynamics_mujoco.py`：理论模型 vs MuJoCo 独立对比验证
-- `mujoco_model_viewer.py`：快速模型查看器
+## Scripts
 
-## 已包含的核心能力
+### 1. ankle_dynamics_mujoco.py
 
-1. 数值雅可比估计（用于电机-脚踝映射分析）
-2. 电机扭矩到末端广义力的映射分析
-3. 质量矩阵、重力补偿与逆动力学计算
-4. 基于 MuJoCo 的几何独立求解与误差对比
+Compares theoretical kinematics/dynamics against MuJoCo physics engine.
 
-## 运行示例
+**Features:**
+- Analytical IK (theory side)
+- Geometric solver from MuJoCo site positions (independent)
+- Inverse dynamics comparison via mj_inverse
+- Error analysis between theory and simulation
 
+**Usage:**
+```bash
+python scripts/dynamics/ankle_dynamics_mujoco.py
+```
+
+### 2. ankle_dynamics_pinocchio.py
+
+Pinocchio-based forward/inverse dynamics with Meshcat visualization.
+
+**Features:**
+- Forward kinematics via constraint solving
+- Numerical Jacobian computation
+- Mass matrix calculation
+- Coriolis and gravity compensation
+- Real-time tendon visualization
+
+**Usage:**
+```bash
+python scripts/dynamics/ankle_dynamics_pinocchio.py
+```
+
+### 3. ankle_dynamics_headless.py
+
+Lightweight Pinocchio dynamics without visualization.
+
+**Features:**
+- Same dynamics computation as pinocchio version
+- No external visualization dependencies
+- Faster execution for batch processing
+
+**Usage:**
 ```bash
 python scripts/dynamics/ankle_dynamics_headless.py
 ```
 
-## 备注
+### 4. mujoco_model_viewer.py
 
-- 脚本已统一改为相对仓库根目录定位模型文件，不再依赖绝对路径。
-- 若要复现实验，请确认本地已安装 MuJoCo / Pinocchio 相关依赖。
+Quick MuJoCo model viewer.
+
+**Usage:**
+```bash
+python scripts/dynamics/mujoco_model_viewer.py
+```
+
+## Core Capabilities
+
+1. **Numerical Jacobian Estimation**: Motor-to-ankle endpoint mapping analysis
+2. **Torque Mapping**: Motor torque to end-effector force/torque transformation
+3. **Mass Matrix Computation**: Motor space inertia calculation
+4. **Gravity Compensation**: Inverse dynamics with gravity
+5. **MuJoCo Geometric Solver**: Independent verification using MJCF geometry
+
+## Installation
+
+All scripts automatically locate the repository root. Ensure MuJoCo/Pinocchio dependencies are installed:
+
+```bash
+pip install mujoco pin meshcat
+```
+
+## Notes
+
+- Scripts use relative paths to locate model files
+- Theory side uses mm coordinates
+- MuJoCo side uses m coordinates
+- Error reveals modeling parameter differences

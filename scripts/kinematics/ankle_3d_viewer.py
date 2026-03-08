@@ -32,7 +32,7 @@ def main():
     plt.subplots_adjust(bottom=0.25)
     ax = fig.add_subplot(111, projection='3d')
 
-    # 设置更利于观察的初始视角
+    # Set an initial view angle that better exposes mechanism depth.
     ax.view_init(elev=25, azim=-50)
 
     ax.set_xlim([-100, 150])
@@ -43,42 +43,42 @@ def main():
     ax.set_zlabel('Z (Up)')
     ax.set_title("Drag sliders to move the foot pedal!", fontsize=14, pad=10)
 
-    # 绘制固定电机和原点
+    # Draw fixed motor locations and the ankle origin.
     ax.scatter(*robot.A1, color='b', s=60, marker='s', label=f'Motor 1')
     ax.scatter(*robot.A2, color='r', s=60, marker='s', label=f'Motor 2')
     ax.scatter(0, 0, 0,   color='k', s=80, marker='*', label='Ankle Joint (Origin)')
     ax.legend(fontsize=9, loc='upper left')
 
-    # 绘制连杆，增加了小圆点(marker='o')以凸显机械关节
+    # Draw crank/link segments with markers to highlight joints.
     line_crank1, = ax.plot([], [],[], color='b', linestyle='-', linewidth=3, marker='o', markersize=5)
     line_crank2, = ax.plot([], [],[], color='r', linestyle='-', linewidth=3, marker='o', markersize=5)
     line_link1,  = ax.plot([], [],[], color='#4da6ff', linestyle='--', linewidth=2, marker='o', markersize=4)
     line_link2,  = ax.plot([], [],[], color='#ff4d4d', linestyle='--', linewidth=2, marker='o', markersize=4)
 
-    # 脚踏板几何定义 (在局部坐标系下)
-    arm_len = robot.h2 + robot.h3   # 前后延伸长度
+    # Define pedal geometry in the local frame.
+    arm_len = robot.h2 + robot.h3   # Forward/backward extension length.
     mid_w = (robot.C1_w + robot.C2_w) / 2
     fwd_w = mid_w + np.array([arm_len, 0.0, 0.0])  
     bwd_w = mid_w + np.array([-arm_len, 0.0, 0.0]) 
     
-    # 提取左右宽度作为踏板边界
-    y_left = robot.C1_w[1] + 10  # 稍微加宽一点让连杆末端包在踏板内侧更美观
+    # Derive pedal side boundaries from lateral anchor positions.
+    y_left = robot.C1_w[1] + 10  # Slightly wider for cleaner visual containment.
     y_right = robot.C2_w[1] - 10
     z_pedal = mid_w[2]
 
-    # 定义踏板的四个角点 (按逆时针顺序)
+    # Define pedal corners in counter-clockwise order.
     corners_w = [
-        np.array([fwd_w[0], y_left, z_pedal]),  # 左前
-        np.array([bwd_w[0], y_left, z_pedal]),  # 左后
-        np.array([bwd_w[0], y_right, z_pedal]), # 右后
-        np.array([fwd_w[0], y_right, z_pedal])  # 右前
+        np.array([fwd_w[0], y_left, z_pedal]),   # Front-left.
+        np.array([bwd_w[0], y_left, z_pedal]),   # Rear-left.
+        np.array([bwd_w[0], y_right, z_pedal]),  # Rear-right.
+        np.array([fwd_w[0], y_right, z_pedal]),  # Front-right.
     ]
 
-    # 初始化3D多边形 (半透明绿色填充，深绿色边框)
+    # Initialize pedal polygon (semi-transparent green with darker edges).
     pedal_poly = Poly3DCollection([], facecolors='#32CD32', edgecolors='#006400', alpha=0.35, linewidths=1.5)
     ax.add_collection3d(pedal_poly)
 
-    # 踏板内部的十字结构骨架 (改为细线，作为金属骨架示意)
+    # Internal crossbars for visual structure cues.
     line_lat, = ax.plot([], [],[], color='gray', linestyle='-', linewidth=2)
     line_fwd, = ax.plot([], [],[], color='gray', linestyle='-', linewidth=2)
 
@@ -89,7 +89,7 @@ def main():
         if q1 is None:
             status_text.set_text(f"[!] UNREACHABLE POS\nRoll={tx:+.3f} rad\nPitch={ty:+.3f} rad")
             status_text.set_color('red')
-            # 如果不可达，将面变成红色警告
+            # Mark unreachable states by coloring the pedal red.
             pedal_poly.set_facecolors('#FF0000') 
             return
 
@@ -105,12 +105,12 @@ def main():
         line_link1.set_data_3d([B1_O[0],C1_O[0]], [B1_O[1],C1_O[1]],[B1_O[2],C1_O[2]])
         line_link2.set_data_3d([B2_O[0],C2_O[0]], [B2_O[1],C2_O[1]], [B2_O[2],C2_O[2]])
 
-        # 旋转并更新踏板四个角点
+        # Rotate and update pedal corners.
         corners_O =[R @ pt for pt in corners_w]
         pedal_poly.set_verts([corners_O])
-        pedal_poly.set_facecolors('#32CD32') # 恢复绿色
+        pedal_poly.set_facecolors('#32CD32')  # Restore normal pedal color.
 
-        # 更新十字骨架
+        # Update internal crossbars.
         line_lat.set_data_3d([C1_O[0], C2_O[0]], [C1_O[1], C2_O[1]], [C1_O[2], C2_O[2]])
         bwd_O, fwd_O = R @ bwd_w, R @ fwd_w
         line_fwd.set_data_3d([bwd_O[0], fwd_O[0]], [bwd_O[1], fwd_O[1]], [bwd_O[2], fwd_O[2]])
@@ -124,7 +124,7 @@ def main():
 
     update(0.0, 0.0)
 
-    # UI 控件美化
+    # Style slider controls.
     axcolor  = '#f0f0f0'
     ax_roll  = plt.axes([0.15, 0.10, 0.65, 0.03], facecolor=axcolor)
     ax_pitch = plt.axes([0.15, 0.05, 0.65, 0.03], facecolor=axcolor)

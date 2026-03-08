@@ -1,8 +1,8 @@
 """
-使用 Pinocchio 进行脚踝并联机构的动力学求解与可视化。
+Pinocchio-based dynamics and visualization demo for the parallel ankle.
 
-运动学部分统一使用 src/pndbotics_ankle.CustomAnkleKinematics，
-Pinocchio / Meshcat 仅用于刚体动力学量与可视化。
+Kinematics are provided by `src/pndbotics_ankle.CustomAnkleKinematics`.
+Pinocchio and Meshcat are used for rigid-body dynamics terms and rendering.
 """
 import sys
 from pathlib import Path
@@ -19,18 +19,18 @@ from pndbotics_ankle import CustomAnkleKinematics
 # Resolve project root from this script location
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-# 从 MJCF 加载模型
+# Load model from MJCF.
 mjcf_path = PROJECT_ROOT / "adam_pro" / "adam_pro.xml"
 model, collision_model, visual_model = pin.buildModelsFromMJCF(str(mjcf_path))
 data = model.createData()
 ankle_kin = CustomAnkleKinematics()
 
-print(f"模型名称: {model.name}")
-print(f"自由度数量: {model.nq}")
-print(f"关节数量: {model.njoints}")
+print(f"Model name: {model.name}")
+print(f"DoF count: {model.nq}")
+print(f"Joint count: {model.njoints}")
 
 # ─────────────────────────────────────────────
-# 关节索引
+# Joint index helpers.
 # ─────────────────────────────────────────────
 def get_joint_q_index(joint_id):
     return model.joints[joint_id].idx_q
@@ -70,20 +70,20 @@ def raw_motor_to_src(raw_q: float, raw_home: float, src_home: float) -> float:
 def src_motor_to_raw(src_q: float, src_home: float, raw_home: float) -> float:
     return raw_home - (src_q - src_home)
 
-print(f"\n左脚踝关节 q-index:")
+print("\nLeft ankle joint q-index:")
 print(f"  ankleMotor_Left_1: {ankle_motor_left_1_idx}")
 print(f"  ankleMotor_Left_2: {ankle_motor_left_2_idx}")
 print(f"  anklePitch_Left:   {ankle_pitch_left_idx}")
 print(f"  ankleRoll_Left:    {ankle_roll_left_idx}")
 
-print(f"\n右脚踝关节 q-index:")
+print("\nRight ankle joint q-index:")
 print(f"  ankleMotor_Right_1: {ankle_motor_right_1_idx}")
 print(f"  ankleMotor_Right_2: {ankle_motor_right_2_idx}")
 print(f"  anklePitch_Right:   {ankle_pitch_right_idx}")
 print(f"  ankleRoll_Right:    {ankle_roll_right_idx}")
 
 # ─────────────────────────────────────────────
-# 查找连杆 site frames
+# Resolve tendon site frames.
 # ─────────────────────────────────────────────
 site_names = [
     "ankleLeft_B1",    "ankleLeft_B2",
@@ -93,14 +93,14 @@ site_names = [
 ]
 
 frame_ids = {}
-print("\n查找连杆 site frames:")
+print("\nResolving tendon site frames:")
 for name in site_names:
     fid = model.getFrameId(name)
     if fid < len(model.frames):
         frame_ids[name] = fid
-        print(f"  找到: {name} -> frame {fid}")
+        print(f"  Found: {name} -> frame {fid}")
     else:
-        print(f"  未找到: {name}")
+        print(f"  Missing: {name}")
 
 def solve_parallel_fk(q_base,
                       motor1_left=None,  motor2_left=None,
@@ -143,7 +143,7 @@ def solve_parallel_fk(q_base,
 
 
 # ─────────────────────────────────────────────
-# 逆运动学：给定 pitch/roll 求电机角度（线性近似）
+# Inverse kinematics: map desired pitch/roll to motor angles.
 # ─────────────────────────────────────────────
 def inverse_kinematics_ankle(desired_pitch, desired_roll, ankle_type='left', q_seed=None):
     if q_seed is None:
@@ -162,7 +162,7 @@ def inverse_kinematics_ankle(desired_pitch, desired_roll, ankle_type='left', q_s
 
 
 # ─────────────────────────────────────────────
-# 动力学计算部分
+# Dynamics helper functions.
 # ─────────────────────────────────────────────
 
 def compute_ankle_jacobian_numerical(q_config, ankle_type='left', delta=1e-7):
@@ -262,36 +262,36 @@ def compute_inverse_dynamics_ankle(q_config, qd_config, qdd_config, ankle_type='
 
 def print_ankle_dynamics(q_config, qd_config, ankle_type='left'):
     """
-    打印脚踝的动力学信息。
+    Print ankle dynamics diagnostics for one side.
     """
     print(f"\n{'='*60}")
-    print(f"脚踝动力学信息 ({ankle_type.upper()}):")
+    print(f"Ankle dynamics info ({ankle_type.upper()}):")
     print(f"{'='*60}")
     
-    # 雅可比矩阵
+    # Jacobian matrix.
     J = compute_ankle_jacobian_numerical(q_config, ankle_type)
-    print(f"\n雅可比矩阵 J_m2j (d[pitch,roll]/d[motor1,motor2]):")
+    print("\nJacobian J_m2j (d[pitch,roll]/d[motor1,motor2]):")
     print(f"{J}")
-    print(f"条件数 cond(J_m2j) = {np.linalg.cond(J):.4f}")
+    print(f"Condition number cond(J_m2j) = {np.linalg.cond(J):.4f}")
     
-    # 质量矩阵
+    # Mass matrix.
     M = compute_mass_matrix_ankle(q_config, ankle_type)
-    print(f"\n电机空间质量矩阵 M (2x2):")
+    print("\nMotor-space mass matrix M (2x2):")
     print(f"{M}")
     
-    # 科氏力+重力
+    # Coriolis + gravity term.
     c_g = compute_coriolis_gravity(q_config, qd_config, ankle_type)
-    print(f"\n科氏力+重力补偿扭矩:")
+    print("\nCoriolis + gravity compensation torque:")
     if ankle_type == 'left':
-        print(f"  Motor_Left_1: {c_g[0]:+.4f} N·m")
-        print(f"  Motor_Left_2: {c_g[1]:+.4f} N·m")
+        print(f"  Motor_Left_1: {c_g[0]:+.4f} N*m")
+        print(f"  Motor_Left_2: {c_g[1]:+.4f} N*m")
     else:
-        print(f"  Motor_Right_1: {c_g[0]:+.4f} N·m")
-        print(f"  Motor_Right_2: {c_g[1]:+.4f} N·m")
+        print(f"  Motor_Right_1: {c_g[0]:+.4f} N*m")
+        print(f"  Motor_Right_2: {c_g[1]:+.4f} N*m")
 
 
 # ─────────────────────────────────────────────
-# 连杆（Tendon）可视化
+# Tendon visualization.
 # ─────────────────────────────────────────────
 tendon_pairs = [
     ("ankleLeft_B1",   "ankleToeLeft_C1",  "tendon/left_1",  0xFF8800),
@@ -322,7 +322,7 @@ def draw_cylinder_between(viewer, node_name, p1, p2,
 
 
 def update_tendons():
-    """更新连杆可视化（须在 FK 已执行后调用）。"""
+    """Update tendon visuals after forward kinematics has run."""
     for b_name, c_name, node_name, color in tendon_pairs:
         if b_name not in frame_ids or c_name not in frame_ids:
             continue
@@ -332,7 +332,7 @@ def update_tendons():
 
 
 def display_with_tendons(q_config):
-    """显示机器人姿态并同步更新连杆。"""
+    """Display pose and keep tendon overlays synchronized."""
     pin.forwardKinematics(model, data, q_config)
     pin.updateFramePlacements(model, data)
     viz.display(q_config)
@@ -340,21 +340,21 @@ def display_with_tendons(q_config):
 
 
 # ─────────────────────────────────────────────
-# 初始化 Meshcat
+# Initialize Meshcat.
 # ─────────────────────────────────────────────
 viz = MeshcatVisualizer(model, collision_model, visual_model)
 try:
     viz.initViewer(open=True)
 except ImportError as err:
-    print("错误: 无法启动 Meshcat 查看器:", err)
+    print("Error: failed to start Meshcat viewer:", err)
     viz.initViewer(loadModel=False, open=False)
 
 viz.loadViewerModel()
-print(f"\nMeshcat 可视化已启动，访问: {viz.viewer.url()}")
+print(f"\nMeshcat visualization started. Open: {viz.viewer.url()}")
 
 # ─────────────────────────────────────────────
-# 初始姿态：在零电机角度下先求一次约束，
-# 确保初始 ankle pitch/roll 与连杆长度吻合
+# Initial pose: solve the linkage constraints at zero motor angles
+# so ankle pitch/roll are consistent with tendon lengths.
 # ─────────────────────────────────────────────
 q = q_neutral.copy()
 q = solve_parallel_fk(q,
@@ -364,10 +364,10 @@ display_with_tendons(q)
 time.sleep(1.0)
 
 # ─────────────────────────────────────────────
-# 演示：正运动学（电机驱动 → 约束求解 → 脚掌跟随）
+# Demo: forward kinematics (motor input -> constraint solve -> foot motion).
 # ─────────────────────────────────────────────
-print("\n=== 正运动学演示 ===")
-print("电机转动 → 约束求解 → 脚掌跟随运动\n")
+print("\n=== Forward Kinematics Demo ===")
+print("Motor motion -> constraint solve -> foot motion\n")
 
 q_demo = q.copy()
 for i, motor_angle in enumerate(np.linspace(-0.3, 0.3, 10)):
@@ -379,23 +379,23 @@ for i, motor_angle in enumerate(np.linspace(-0.3, 0.3, 10)):
     q_demo = q_test.copy()
     display_with_tendons(q_test)
 
-    print(f"步骤 {i+1:2d}:  Motor1={motor_angle:+.3f}  Motor2={-motor_angle:+.3f}"
-          f"  =>  左Pitch={q_test[ankle_pitch_left_idx]:+.4f} 左Roll={q_test[ankle_roll_left_idx]:+.4f}"
-          f"  右Pitch={q_test[ankle_pitch_right_idx]:+.4f} 右Roll={q_test[ankle_roll_right_idx]:+.4f}")
+    print(f"Step {i+1:2d}:  Motor1={motor_angle:+.3f}  Motor2={-motor_angle:+.3f}"
+          f"  ->  LeftPitch={q_test[ankle_pitch_left_idx]:+.4f} LeftRoll={q_test[ankle_roll_left_idx]:+.4f}"
+          f"  RightPitch={q_test[ankle_pitch_right_idx]:+.4f} RightRoll={q_test[ankle_roll_right_idx]:+.4f}")
     time.sleep(0.5)
 
 # ─────────────────────────────────────────────
-# 演示：逆运动学（给定期望姿态 → 求电机角 → 约束验证）
+# Demo: inverse kinematics (target pose -> motor angles -> constraint check).
 # ─────────────────────────────────────────────
-print("\n=== 逆运动学演示 ===")
-print("给定期望脚踝姿态 → 计算电机角度 → 约束正向验证\n")
+print("\n=== Inverse Kinematics Demo ===")
+print("Target ankle pose -> motor angles -> forward constraint check\n")
 
 desired_poses = [
-    ( 0.0,   0.0),   # 中立
-    ( 0.2,   0.0),   # 向前倾
-    (-0.2,   0.0),   # 向后倾
-    ( 0.0,   0.15),  # 向左倾
-    ( 0.0,  -0.15),  # 向右倾
+    (0.0, 0.0),    # Neutral.
+    (0.2, 0.0),    # Forward lean.
+    (-0.2, 0.0),   # Backward lean.
+    (0.0, 0.15),   # Left lean.
+    (0.0, -0.15),  # Right lean.
 ]
 
 q_ik_seed = q.copy()
@@ -409,46 +409,46 @@ for i, (pitch, roll) in enumerate(desired_poses):
     q_ik_seed = q_ik.copy()
     display_with_tendons(q_ik)
 
-    print(f"步骤 {i+1}: 期望 Pitch={pitch:+.3f} Roll={roll:+.3f}  "
-          f"=> Motor1={motor_angles[0]:+.3f} Motor2={motor_angles[1]:+.3f}  "
-          f"=> 左 Pitch={q_ik[ankle_pitch_left_idx]:+.4f} Roll={q_ik[ankle_roll_left_idx]:+.4f}"
-          f"   右 Pitch={q_ik[ankle_pitch_right_idx]:+.4f} Roll={q_ik[ankle_roll_right_idx]:+.4f}")
+    print(f"Step {i+1}: Target Pitch={pitch:+.3f} Roll={roll:+.3f}  "
+          f"-> Motor1={motor_angles[0]:+.3f} Motor2={motor_angles[1]:+.3f}  "
+          f"-> Left Pitch={q_ik[ankle_pitch_left_idx]:+.4f} Roll={q_ik[ankle_roll_left_idx]:+.4f}"
+          f"   Right Pitch={q_ik[ankle_pitch_right_idx]:+.4f} Roll={q_ik[ankle_roll_right_idx]:+.4f}")
     time.sleep(1.0)
 
 # ─────────────────────────────────────────────
-# 演示：动力学计算
+# Demo: dynamics calculations.
 # ─────────────────────────────────────────────
 print("\n" + "="*70)
-print("=== 动力学计算演示 ===")
+print("=== Dynamics Demo ===")
 print("="*70)
 
-# 初始化速度和加速度向量
+# Initialize velocity and acceleration vectors.
 qd = np.zeros(model.nv)
 qdd = np.zeros(model.nv)
 
-# 为电机添加一些速度（示例）
+# Set sample motor velocities.
 motor_v_1_idx = model.joints[ankle_motor_left_1_id].idx_v
 motor_v_2_idx = model.joints[ankle_motor_left_2_id].idx_v
 qd[motor_v_1_idx] = 0.5   # rad/s
 qd[motor_v_2_idx] = 0.3   # rad/s
 
-# 为电机添加加速度（示例）
+# Set sample motor accelerations.
 qdd[motor_v_1_idx] = 0.2  # rad/s^2
 qdd[motor_v_2_idx] = 0.1  # rad/s^2
 
-# 使用当前配置计算动力学
+# Compute dynamics at the current configuration.
 print_ankle_dynamics(q, qd, ankle_type='left')
 print_ankle_dynamics(q, qd, ankle_type='right')
 
 # ─────────────────────────────────────────────
-# 演示：不同姿态下的动力学变化
+# Demo: dynamics variation across poses.
 # ─────────────────────────────────────────────
 print("\n" + "="*70)
-print("=== 不同电机角度下的动力学特性 ===")
+print("=== Dynamics Across Motor Angles ===")
 print("="*70)
 
 motor_angles_range = np.linspace(-0.3, 0.3, 3)
-print(f"\n测试电机角度: {motor_angles_range}")
+print(f"\nTest motor angles: {motor_angles_range}")
 
 for motor_angle in motor_angles_range:
     q_test = solve_parallel_fk(q,
@@ -457,50 +457,50 @@ for motor_angle in motor_angles_range:
                                motor1_right=motor_angle,
                                motor2_right=-motor_angle)
     
-    # 计算雅可比条件数（反映灵活性）
+    # Jacobian condition number (dexterity proxy).
     J = compute_ankle_jacobian_numerical(q_test, ankle_type='left')
     cond_num = np.linalg.cond(J)
     
-    # 计算质量矩阵特征值（反映加速性能）
+    # Mass-matrix eigenvalues (acceleration response proxy).
     M = compute_mass_matrix_ankle(q_test, ankle_type='left')
     eigs = np.linalg.eigvals(M)
     
-    print(f"\n电机角度: Motor1={motor_angle:+.3f}, Motor2={-motor_angle:+.3f}")
-    print(f"  左脚 - 雅可比条件数: {cond_num:.2f}")
-    print(f"  左脚 - 质量矩阵特征值: {eigs}")
-    print(f"  左脚 - 脚踝姿态: pitch={q_test[ankle_pitch_left_idx]:+.4f}, roll={q_test[ankle_roll_left_idx]:+.4f}")
+    print(f"\nMotor angles: Motor1={motor_angle:+.3f}, Motor2={-motor_angle:+.3f}")
+    print(f"  Left - Jacobian condition number: {cond_num:.2f}")
+    print(f"  Left - Mass-matrix eigenvalues: {eigs}")
+    print(f"  Left - Ankle pose: pitch={q_test[ankle_pitch_left_idx]:+.4f}, roll={q_test[ankle_roll_left_idx]:+.4f}")
 
 # ─────────────────────────────────────────────
-# 演示：给定期望加速度计算所需电机扭矩
+# Demo: required motor torque for target accelerations.
 # ─────────────────────────────────────────────
 print("\n" + "="*70)
-print("=== 逆动力学演示 (期望加速度 → 电机扭矩) ===")
+print("=== Inverse Dynamics Demo (Target Acceleration -> Motor Torque) ===")
 print("="*70)
 
 desired_accelerations = [
-    (0.2, 0.0, "快速pitch加速"),
-    (0.0, 0.2, "快速roll加速"),
-    (0.1, 0.1, "耦合运动加速"),
+    (0.2, 0.0, "Fast pitch acceleration"),
+    (0.0, 0.2, "Fast roll acceleration"),
+    (0.1, 0.1, "Coupled acceleration"),
 ]
 
 for pitch_accel, roll_accel, description in desired_accelerations:
-    # 设置期望的pitch和roll加速度
+    # Set target pitch and roll accelerations.
     qdd_test = np.zeros(model.nv)
     pitch_v_idx = model.joints[model.getJointId("anklePitch_Left")].idx_v
     roll_v_idx = model.joints[model.getJointId("ankleRoll_Left")].idx_v
     qdd_test[pitch_v_idx] = pitch_accel
     qdd_test[roll_v_idx] = roll_accel
     
-    # 计算所需的电机扭矩
+    # Compute the required motor torques.
     tau_motor = compute_inverse_dynamics_ankle(q, qd, qdd_test, ankle_type='left')
     
     print(f"\n{description}:")
-    print(f"  期望加速度: pitch={pitch_accel:+.3f}, roll={roll_accel:+.3f} rad/s^2")
-    print(f"  所需电机扭矩: Motor_1={tau_motor[0]:+.4f}, Motor_2={tau_motor[1]:+.4f} N·m")
+    print(f"  Target acceleration: pitch={pitch_accel:+.3f}, roll={roll_accel:+.3f} rad/s^2")
+    print(f"  Required motor torque: Motor_1={tau_motor[0]:+.4f}, Motor_2={tau_motor[1]:+.4f} N*m")
 
 # ─────────────────────────────────────────────
-# 保持可视化短暂停留后退出，便于脚本化验证
+# Keep visualization alive briefly, then exit for scripted runs.
 # ─────────────────────────────────────────────
-print("\n=== 可视化保持 3 秒后自动退出 ===")
+print("\n=== Keeping visualization for 3 seconds, then exit ===")
 time.sleep(3.0)
-print("程序退出")
+print("Program exited.")

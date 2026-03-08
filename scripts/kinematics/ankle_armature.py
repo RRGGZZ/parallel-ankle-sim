@@ -39,40 +39,44 @@ N_SCAN = 120                  # Number of scan points
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  Armature 计算
+# Armature computation.
 # ══════════════════════════════════════════════════════════════════════
 def compute_armature(J_vel: np.ndarray, I_motor: float, axis: int):
     """
-    计算给定关节轴的等效 armature。
+    Compute reflected armature for one joint axis.
 
-    参数
-    ----
-    J_vel   : 2×2 速度雅可比（电机角速度 = J_vel @ 关节角速度）
-    I_motor : 单个电机转子惯量 [kg·m²]
-    axis    : 0 = Roll (tx), 1 = Pitch (ty)
+    Parameters
+    ----------
+    J_vel : np.ndarray
+        2x2 velocity Jacobian (`motor_speed = J_vel @ joint_speed`).
+    I_motor : float
+        Rotor inertia of a single motor [kg*m^2].
+    axis : int
+        0 for roll (tx), 1 for pitch (ty).
 
-    返回
-    ----
-    k_vel   : 各电机的速度传动比（长度 2 的数组）
-    I_arm   : 等效反射惯量（armature）[kg·m²]
+    Returns
+    -------
+    tuple[np.ndarray, float]
+        Per-motor speed ratios (length 2) and reflected armature [kg*m^2].
     """
     e = np.zeros(2)
     e[axis] = 1.0
-    k_vel = J_vel @ e                           # 速度传动比
+    k_vel = J_vel @ e                           # Speed transmission ratios.
     I_arm = float(np.sum(k_vel**2) * I_motor)   # Σ k_i² × I_motor
     return k_vel, I_arm
 
 
 def scan_armature_2d(robot, I_motor, roll_range_rad, pitch_range_rad, n):
     """
-    2D 网格扫描：遍历所有 (roll, pitch) 组合，
-    返回网格坐标和对应的 armature 矩阵。
-    无效点（IK失败/奇异）填 NaN。
+    Run a 2D armature scan over all (roll, pitch) pairs.
+
+    Returns grid coordinates and armature maps.
+    Invalid points (IK failure or singular Jacobian) are set to `NaN`.
     """
     roll_arr  = np.linspace(*roll_range_rad,  n)
     pitch_arr = np.linspace(*pitch_range_rad, n)
 
-    # 网格：行 = roll，列 = pitch（坐标直接用弧度）
+    # Grid layout: rows are roll, columns are pitch (all in radians).
     PITCH_grid, ROLL_grid = np.meshgrid(pitch_arr, roll_arr)
     ARM_roll  = np.full_like(PITCH_grid, np.nan)
     ARM_pitch = np.full_like(PITCH_grid, np.nan)
@@ -94,7 +98,7 @@ def scan_armature_2d(robot, I_motor, roll_range_rad, pitch_range_rad, n):
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  主程序
+# Main routine.
 # ══════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     robot = CustomAnkleKinematics()
@@ -102,26 +106,26 @@ if __name__ == "__main__":
     roll_rad = ROLL_RANGE_RAD
     pitch_rad = PITCH_RANGE_RAD
 
-    # ── 零位详细分析 ──────────────────────────────────────────────────
+    # ── Home-pose details ──────────────────────────────────────────────
     q1h, q2h = robot.IK(0.0, 0.0)
     Jv_home = robot.calc_Jvel(0.0, 0.0, q1h, q2h)
 
     print("=" * 60)
-    print(f"  电机转子惯量 I_motor = {I_MOTOR} kg·m²")
+    print(f"  Motor rotor inertia I_motor = {I_MOTOR} kg*m^2")
     print("=" * 60)
-    print(f"\n零位 J_vel =\n{np.round(Jv_home, 4)}\n")
+    print(f"\nHome J_vel =\n{np.round(Jv_home, 4)}\n")
 
     home_results = {}
     for axis, name in [(0, "Roll (tx)"), (1, "Pitch (ty)")]:
         k_vel, I_arm = compute_armature(Jv_home, I_MOTOR, axis)
         home_results[name] = I_arm
         print(f"  {name}:")
-        print(f"    电机1: k = {k_vel[0]:+.4f}  贡献 = {k_vel[0]**2 * I_MOTOR:.5f} kg·m²")
-        print(f"    电机2: k = {k_vel[1]:+.4f}  贡献 = {k_vel[1]**2 * I_MOTOR:.5f} kg·m²")
-        print(f"    ➜ Armature @ home = {I_arm:.5f} kg·m²\n")
+        print(f"    Motor1: k = {k_vel[0]:+.4f}  contribution = {k_vel[0]**2 * I_MOTOR:.5f} kg*m^2")
+        print(f"    Motor2: k = {k_vel[1]:+.4f}  contribution = {k_vel[1]**2 * I_MOTOR:.5f} kg*m^2")
+        print(f"    -> Armature @ home = {I_arm:.5f} kg*m^2\n")
 
-    # ── 2D 网格扫描 ──────────────────────────────────────────────────
-    print("正在进行 2D 网格扫描，请稍候...")
+    # ── 2D grid scan ───────────────────────────────────────────────────
+    print("Running 2D grid scan, please wait...")
     ROLL_G, PITCH_G, ARM_ROLL, ARM_PITCH = scan_armature_2d(
         robot, I_MOTOR, roll_rad, pitch_rad, N_SCAN
     )
@@ -130,12 +134,12 @@ if __name__ == "__main__":
     cons_pitch = float(np.nanmax(ARM_PITCH))
 
     print("=" * 60)
-    print("  保守估计（全运动范围最大值，建议填入仿真器）")
+    print("  Conservative estimate (max over full motion range, recommended for simulators)")
     print("=" * 60)
-    print(f"  Roll  armature = {cons_roll:.5f} kg·m²")
-    print(f"  Pitch armature = {cons_pitch:.5f} kg·m²")
+    print(f"  Roll  armature = {cons_roll:.5f} kg*m^2")
+    print(f"  Pitch armature = {cons_pitch:.5f} kg*m^2")
 
-    # ── 3D 曲面图 ────────────────────────────────────────────────────
+    # ── 3D surface plots ───────────────────────────────────────────────
     from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
     import matplotlib.cm as cm
 
@@ -158,14 +162,14 @@ if __name__ == "__main__":
             linewidth=0, antialiased=True,
         )
 
-        # 等高线投影到底部
+        # Project filled contours onto the bottom plane.
         ax.contourf(
             PITCH_G, ROLL_G, Z,
             zdir='z', offset=np.nanmin(Z) - 1,
             cmap=cmap, alpha=0.35, levels=15,
         )
 
-        # 标注最大值点
+        # Mark maximum point.
         idx = np.unravel_index(np.nanargmax(Z), Z.shape)
         max_p = PITCH_G[idx]
         max_r = ROLL_G[idx]
@@ -196,5 +200,5 @@ if __name__ == "__main__":
     plt.tight_layout()
     out_png = 'ankle_armature_3d.png'
     plt.savefig(out_png, dpi=150, bbox_inches='tight')
-    print(f"\n图像已保存至: {out_png}")
+    print(f"\nImage saved to: {out_png}")
     plt.show()

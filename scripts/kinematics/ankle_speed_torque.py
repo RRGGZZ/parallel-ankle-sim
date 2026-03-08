@@ -69,30 +69,29 @@ def motor_torque_limit(omega: float, tau_flat: float) -> float:
 # ── Map motor speed-torque curve to joint space ───────────────────────
 def joint_speed_torque_curve(J_vel, J_tau, axis: int, tau_flat: float, n_pts=300):
     """
-    给定雅可比矩阵和电机扭矩限制，计算关节速度-扭矩边界曲线。
+    Compute the joint speed-torque envelope from motor limits and Jacobians.
 
     axis: 0 = roll (tx), 1 = pitch (ty)
-    返回: (omega_joint_array, tau_joint_array)
+    Returns: (omega_joint_array, tau_joint_array)
 
-    推导：
-      对于关节速度方向 e_axis = [1,0] 或 [0,1]，
-        q_dot = J_vel @ (omega_j * e_axis)  → 各电机转速与 omega_j 成比例
-      对于关节扭矩方向 e_axis，
-        tau_motor = J_tau @ (tau_j * e_axis) → 各电机扭矩与 tau_j 成比例
-
-      在给定 omega_j 下，每个电机可提供的最大扭矩 tau_avail_i(omega_j)，
-      关节扭矩受限于：
+    Derivation:
+      For joint-speed direction `e_axis = [1, 0]` or `[0, 1]`:
+        `q_dot = J_vel @ (omega_j * e_axis)` -> motor speed scales with `omega_j`.
+      For joint-torque direction `e_axis`:
+        `tau_motor = J_tau @ (tau_j * e_axis)` -> motor torque scales with `tau_j`.
+      At a given `omega_j`, each motor has an available torque `tau_avail_i(omega_j)`.
+      Joint torque is limited by:
         tau_j = min_i [ tau_avail_i(q_dot_i) / |J_tau[i, axis]| ]
     """
     e = np.zeros(2); e[axis] = 1.0
 
-    # 每个电机速度系数（J_vel第i行·e_axis）
+    # Per-motor speed gain (i-th row of J_vel projected onto e_axis).
     k_vel = J_vel @ e          # shape (2,)
 
-    # 每个电机扭矩系数（J_tau第i行·e_axis）
+    # Per-motor torque gain (i-th row of J_tau projected onto e_axis).
     k_tau = J_tau @ e          # shape (2,)
 
-    # 关节最大速度：所有电机都不超过 W_MAX
+    # Maximum joint speed when all motors respect `W_MAX`.
     # |k_vel_i| * omega_j <= W_MAX → omega_j <= W_MAX / |k_vel_i|
     omega_j_max = min(W_MAX / abs(k) for k in k_vel if abs(k) > 1e-9)
 
@@ -111,7 +110,7 @@ def joint_speed_torque_curve(J_vel, J_tau, axis: int, tau_flat: float, n_pts=300
     return omega_arr, tau_arr
 
 
-# ── 主程序 ──────────────────────────────────────────────────────────
+# ── Main routine ─────────────────────────────────────────────────────
 robot = CustomAnkleKinematics()
 q1_home, q2_home = robot.IK(0.0, 0.0)
 J_vel, J_tau = robot.calc_Jacobians(0.0, 0.0, q1=q1_home, q2=q2_home)
@@ -119,13 +118,13 @@ J_vel, J_tau = robot.calc_Jacobians(0.0, 0.0, q1=q1_home, q2=q2_home)
 print(f"Home J_vel:\n{J_vel}")
 print(f"Home J_tau:\n{J_tau}")
 
-# 计算四条曲线（roll/pitch × peak/continuous）
+# Compute four curves (roll/pitch x peak/continuous).
 w_roll_peak,  tau_roll_peak  = joint_speed_torque_curve(J_vel, J_tau, axis=0, tau_flat=TAU_PEAK)
 w_roll_cont,  tau_roll_cont  = joint_speed_torque_curve(J_vel, J_tau, axis=0, tau_flat=TAU_CONT)
 w_pitch_peak, tau_pitch_peak = joint_speed_torque_curve(J_vel, J_tau, axis=1, tau_flat=TAU_PEAK)
 w_pitch_cont, tau_pitch_cont = joint_speed_torque_curve(J_vel, J_tau, axis=1, tau_flat=TAU_CONT)
 
-# ── 绘图 ────────────────────────────────────────────────────────────
+# ── Plotting ─────────────────────────────────────────────────────────
 plt.style.use('default')
 fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
 fig.patch.set_facecolor('white')
@@ -176,10 +175,10 @@ import os as _os
 _save_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'ankle_joint_speed_torque.png')
 plt.savefig(_save_path, dpi=150, bbox_inches='tight', facecolor=fig.get_facecolor())
 plt.show()
-print(f"图像已保存至: {_save_path}")
+print(f"Image saved to: {_save_path}")
 
-# ── 打印关键参数 ─────────────────────────────────────────────────────
-print("\n── 关节能力汇总（零位姿态）──")
+# ── Print key metrics ────────────────────────────────────────────────
+print("\n-- Joint capability summary (home pose) --")
 for name, wp, tp, wc, tc in [
     ('Roll',  w_roll_peak,  tau_roll_peak,  w_roll_cont,  tau_roll_cont),
     ('Pitch', w_pitch_peak, tau_pitch_peak, w_pitch_cont, tau_pitch_cont),

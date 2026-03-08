@@ -1,9 +1,9 @@
 """
-脚踝并联机构动力学演示（轻量版，不需要Meshcat可视化）
-用于快速测试动力学计算功能。
+Lightweight dynamics demo for the parallel ankle mechanism.
 
-运动学部分统一使用 src/pndbotics_ankle.CustomAnkleKinematics，
-Pinocchio 仅用于刚体动力学量计算。
+This script is intended for quick dynamics checks without Meshcat.
+Kinematics come from `src/pndbotics_ankle.CustomAnkleKinematics`,
+while Pinocchio is used for rigid-body dynamics terms only.
 """
 import sys
 from pathlib import Path
@@ -17,18 +17,18 @@ from pndbotics_ankle import CustomAnkleKinematics
 # Resolve project root from this script location
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-# 从 MJCF 加载模型
+# Load model from MJCF.
 mjcf_path = PROJECT_ROOT / "adam_pro" / "adam_pro.xml"
 model, collision_model, visual_model = pin.buildModelsFromMJCF(str(mjcf_path))
 data = model.createData()
 ankle_kin = CustomAnkleKinematics()
 
-print(f"模型名称: {model.name}")
-print(f"自由度数量: {model.nq}")
-print(f"关节数量: {model.njoints}\n")
+print(f"Model name: {model.name}")
+print(f"DoF count: {model.nq}")
+print(f"Joint count: {model.njoints}\n")
 
 # ─────────────────────────────────────────────
-# 关节索引
+# Joint index helpers.
 # ─────────────────────────────────────────────
 def get_joint_q_index(joint_id):
     return model.joints[joint_id].idx_q
@@ -79,7 +79,7 @@ def solve_parallel_fk(q_base, motor1_left=None, motor2_left=None):
     return q_solved
 
 # ─────────────────────────────────────────────
-# 动力学计算函数
+# Dynamics helper functions.
 # ─────────────────────────────────────────────
 
 def compute_ankle_jacobian_numerical(q_config, delta=1e-7):
@@ -130,7 +130,7 @@ def compute_coriolis_gravity(q_config, qd_config):
     return tau_motor
 
 def compute_inverse_dynamics_ankle(q_config, qd_config, qdd_config):
-    """计算脚踝的逆动力学"""
+    """Compute inverse dynamics for the ankle in motor space."""
     M = compute_mass_matrix_ankle(q_config)
     c_g = compute_coriolis_gravity(q_config, qd_config)
     pitch_v_idx = model.joints[model.getJointId("anklePitch_Left")].idx_v
@@ -146,14 +146,14 @@ def compute_inverse_dynamics_ankle(q_config, qd_config, qdd_config):
     return tau
 
 # ─────────────────────────────────────────────
-# 演示
+# Demo.
 # ─────────────────────────────────────────────
 
-# 初始化配置
+# Initialize configuration.
 q = q_neutral.copy()
 q = solve_parallel_fk(q, motor1_left=0., motor2_left=0.)
 
-# 初始化速度和加速度（nv可能与nq不同）
+# Initialize velocity and acceleration vectors (`nv` may differ from `nq`).
 qd = np.zeros(model.nv)
 qdd = np.zeros(model.nv)
 
@@ -166,35 +166,35 @@ qdd[motor_v_1_idx] = 0.2
 qdd[motor_v_2_idx] = 0.1
 
 print("\n" + "="*70)
-print("=== 动力学计算演示 ===")
+print("=== Dynamics Demo ===")
 print("="*70)
 
 J = compute_ankle_jacobian_numerical(q)
-print("\n雅可比矩阵 J_m2j (d[pitch,roll]/d[motor1,motor2]):")
+print("\nJacobian J_m2j (d[pitch,roll]/d[motor1,motor2]):")
 print(f"{J}")
-print(f"条件数: {np.linalg.cond(J):.4f}")
+print(f"Condition number: {np.linalg.cond(J):.4f}")
 
-# 计算质量矩阵
+# Compute mass matrix.
 M = compute_mass_matrix_ankle(q)
-print("\n电机空间质量矩阵 M (2x2):")
+print("\nMotor-space mass matrix M (2x2):")
 print(f"{M}")
 
-# 计算科氏力+重力
+# Compute Coriolis + gravity term.
 c_g = compute_coriolis_gravity(q, qd)
-print(f"\n科氏力+重力补偿扭矩:")
-print(f"  Motor_Left_1: {c_g[0]:+.4f} N·m")
-print(f"  Motor_Left_2: {c_g[1]:+.4f} N·m")
+print("\nCoriolis + gravity compensation torque:")
+print(f"  Motor_Left_1: {c_g[0]:+.4f} N*m")
+print(f"  Motor_Left_2: {c_g[1]:+.4f} N*m")
 
 # ─────────────────────────────────────────────
-# 不同电机角度下的动力学
+# Dynamics across different motor angles.
 # ─────────────────────────────────────────────
 print("\n" + "="*70)
-print("=== 不同电机角度下的动力学特性 ===")
+print("=== Dynamics Across Motor Angles ===")
 print("="*70)
 
 motor_angles_range = np.linspace(-0.3, 0.3, 5)
 
-print(f"\n{'电机角度':^20} | {'雅可比条件数':^20} | {'质量矩阵特征值':^30}")
+print(f"\n{'Motor angles':^20} | {'Jacobian cond.':^20} | {'Mass-matrix eigenvalues':^30}")
 print("-"*72)
 
 for motor_angle in motor_angles_range:
@@ -208,20 +208,20 @@ for motor_angle in motor_angles_range:
           f"{cond_num:18.2f} | {eigs}")
 
 # ─────────────────────────────────────────────
-# 逆动力学演示
+# Inverse dynamics demo.
 # ─────────────────────────────────────────────
 print("\n" + "="*70)
-print("=== 逆动力学演示 (期望加速度 → 电机扭矩) ===")
+print("=== Inverse Dynamics Demo (Target Acceleration -> Motor Torque) ===")
 print("="*70)
 
 desired_accelerations = [
-    (0.2, 0.0, "快速pitch加速"),
-    (0.0, 0.2, "快速roll加速"),
-    (0.1, 0.1, "耦合运动加速"),
-    (0.5, 0.5, "高速耦合运动"),
+    (0.2, 0.0, "Fast pitch acceleration"),
+    (0.0, 0.2, "Fast roll acceleration"),
+    (0.1, 0.1, "Coupled acceleration"),
+    (0.5, 0.5, "High-speed coupled acceleration"),
 ]
 
-print(f"\n{'运动描述':^25} | {'期望加速度':^30} | {'所需电机扭矩':^30}")
+print(f"\n{'Motion':^25} | {'Target acceleration':^30} | {'Required motor torque':^30}")
 print("-"*88)
 
 for pitch_accel, roll_accel, description in desired_accelerations:
@@ -235,6 +235,6 @@ for pitch_accel, roll_accel, description in desired_accelerations:
     
     print(f"{description:^25} | "
           f"pitch={pitch_accel:+.2f}, roll={roll_accel:+.2f}  | "
-          f"τ1={tau_motor[0]:+.4f}, τ2={tau_motor[1]:+.4f} N·m")
+          f"tau1={tau_motor[0]:+.4f}, tau2={tau_motor[1]:+.4f} N*m")
 
-print("\n✓ 动力学计算演示完成！")
+print("\nDynamics demo completed.")

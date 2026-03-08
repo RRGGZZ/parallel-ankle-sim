@@ -111,13 +111,6 @@ def src_motor_to_raw(src_q: float, src_home: float, raw_home: float) -> float:
     return raw_home - (src_q - src_home)
 
 
-def motor_targets_from_pose(roll: float, pitch: float) -> tuple[float, float]:
-    q1_src, q2_src = ankle_kin.IK(roll, pitch)
-    q1_raw = src_motor_to_raw(q1_src, q1_home_src, q1_home_raw)
-    q2_raw = src_motor_to_raw(q2_src, q2_home_src, q2_home_raw)
-    return q1_raw, q2_raw
-
-
 def catmull_rom_closed(points: np.ndarray, phase: float) -> np.ndarray:
     segment_count = len(points)
     phase_wrapped = phase % 1.0
@@ -168,18 +161,17 @@ def set_joint_velocity(joint_id: int, value: float) -> None:
 
 
 def apply_ankle_pose(roll: float, pitch: float, roll_rate: float, pitch_rate: float) -> None:
-    q1_raw, q2_raw = motor_targets_from_pose(roll, pitch)
     data.ctrl[LEFT_1] = 0.0
     data.ctrl[LEFT_2] = 0.0
     data.ctrl[RIGHT_1] = 0.0
     data.ctrl[RIGHT_2] = 0.0
 
-    set_joint_position(LEFT_MOTOR_1_JOINT, q1_raw)
-    set_joint_position(LEFT_MOTOR_2_JOINT, q2_raw)
+    set_joint_position(LEFT_MOTOR_1_JOINT, q1_home_raw)
+    set_joint_position(LEFT_MOTOR_2_JOINT, q2_home_raw)
     set_joint_position(LEFT_PITCH_JOINT, pitch)
     set_joint_position(LEFT_ROLL_JOINT, roll)
-    set_joint_position(RIGHT_MOTOR_1_JOINT, q1_raw)
-    set_joint_position(RIGHT_MOTOR_2_JOINT, q2_raw)
+    set_joint_position(RIGHT_MOTOR_1_JOINT, q1_home_raw)
+    set_joint_position(RIGHT_MOTOR_2_JOINT, q2_home_raw)
     set_joint_position(RIGHT_PITCH_JOINT, pitch)
     set_joint_position(RIGHT_ROLL_JOINT, roll)
 

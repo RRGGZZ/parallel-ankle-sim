@@ -31,7 +31,7 @@ pndbotics-ankle-sim/
 │       └── mujoco_model_viewer.py        # MuJoCo model viewer
 ├── docs/
 │   ├── ankle_joint_speed_torque.png
-│   └── dynamics_notes.md
+│   └── ankle_kinematics_dynamics_notes.md
 └── README.md
 ```
 

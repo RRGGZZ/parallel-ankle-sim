@@ -12,7 +12,7 @@ The ankle mechanism studied in this repository is integrated into the ADAM Pro h
 
 ### 1.2 Ankle geometry reference
 
-![Ankle three-view / dimension reference](./ankle_dim.png)
+![Ankle three-view / dimension reference](./ankle-dim.png)
 
 The ankle is a **two-motor parallel mechanism**. Each motor drives a short crank, and each crank is connected to the foot platform by a long link. The foot platform provides two rotational degrees of freedom:
 

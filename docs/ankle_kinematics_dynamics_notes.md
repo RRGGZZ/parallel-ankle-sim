@@ -269,9 +269,9 @@ The generated figure is:
 
 ## 8. Dynamics Model
 
-The repository contains two dynamics viewpoints:
+The repository contains two complementary dynamics viewpoints:
 
-1. **MuJoCo ground-truth model** in `scripts/dynamics/ankle_dynamics_mujoco.py`
+1. **MuJoCo runtime comparison** in `scripts/dynamics/ankle_dynamics_mujoco.py`
 2. **Pinocchio-based reduced dynamic mapping** in `scripts/dynamics/ankle_dynamics_headless.py` and `ankle_dynamics_pinocchio.py`
 
 ### 8.1 Joint-space equation of motion
@@ -311,29 +311,65 @@ and
 
 This is the mapping now used in `ankle_dynamics_headless.py`.
 
-### 8.3 Numerical Jacobian used in the Pinocchio script
+### 8.3 Shared kinematics and motor-coordinate calibration
 
-The headless Pinocchio script computes:
+The current headless and Pinocchio scripts do **not** keep their own duplicate ankle kinematics anymore.
+They use `src/pndbotics_ankle.CustomAnkleKinematics` as the analytical source for:
+
+- `IK(roll, pitch)`
+- `FK(q1, q2)`
+- `calc_Jacobians(roll, pitch)`
+
+However, an important detail is that the analytical motor angle in `CustomAnkleKinematics`
+is a **geometric crank angle**, while the MJCF / Pinocchio generalized coordinate for
+`ankleMotor_Left_1/2` is the **XML motor joint coordinate**. These two variables differ by
+a sign convention and a home offset.
+
+Therefore the scripts explicitly use a calibration layer of the form:
+
+\[
+q_{src} = q_{src,home} - (q_{raw} - q_{raw,home})
+\]
+
+and conversely:
+
+\[
+q_{raw} = q_{raw,home} - (q_{src} - q_{src,home})
+\]
+
+This calibration is what keeps:
+
+- the analytical crank-angle definition,
+- the XML motor-joint coordinate,
+- and the Pinocchio / MuJoCo visualization state
+
+in the same physical assembly mode.
+
+### 8.4 Jacobian used in the Pinocchio scripts
+
+After the motor-coordinate calibration, the scripts use the analytical Jacobian from
+`CustomAnkleKinematics` and convert it to the local dynamic mapping:
 
 \[
 J_{m2j} = \frac{\partial [\text{pitch},\text{roll}]}{\partial [q_{m1}, q_{m2}]}
 \]
 
-numerically by finite differences:
+where `calc_Jacobians()` returns the analytical velocity relation
 
 \[
-\frac{\partial \text{pitch}}{\partial q_{mi}} \approx
-\frac{\text{pitch}(q_{mi}+\delta)-\text{pitch}(q_{mi}-\delta)}{2\delta}
+\dot q_m = J_{vel} \dot q_j
 \]
+
+so the scripts form
 
 \[
-\frac{\partial \text{roll}}{\partial q_{mi}} \approx
-\frac{\text{roll}(q_{mi}+\delta)-\text{roll}(q_{mi}-\delta)}{2\delta}
+J_{m2j} = J_{vel}^{-1}
 \]
 
-This gives a 2x2 Jacobian directly from motor coordinates to ankle coordinates.
+with row ordering adjusted to match the local `[pitch, roll]` dynamic state used in the
+Pinocchio reductions.
 
-### 8.4 Mass matrix extraction in Pinocchio
+### 8.5 Mass matrix extraction in Pinocchio
 
 The full rigid-body model is loaded from MJCF and Pinocchio computes the full generalized mass matrix:
 
@@ -353,7 +389,7 @@ and then maps it to motor space:
 M_m = J_{m2j}^T M_j J_{m2j}
 \]
 
-### 8.5 Gravity and nonlinear terms
+### 8.6 Gravity and nonlinear terms
 
 Pinocchio provides the nonlinear term vector `nle`, which includes gravity and velocity-dependent effects:
 
@@ -375,7 +411,7 @@ To keep this consistent, the headless script first maps motor velocity to joint 
 
 and only then queries the nonlinear dynamics term.
 
-### 8.6 Inverse dynamics in the current reduced form
+### 8.7 Inverse dynamics in the current reduced form
 
 For a desired ankle acceleration \(\ddot q_j\), the script solves approximately:
 
@@ -397,36 +433,37 @@ This is a useful local approximation near a given pose. For high-speed motion, t
 \ddot q_j = J_{m2j} \ddot q_m + \dot J_{m2j} \dot q_m
 \]
 
-At present, the headless script is mainly a **local analysis / verification tool**, not a full constrained multibody controller.
+At present, the headless and Pinocchio scripts are mainly **local analysis / verification tools**, not full constrained multibody controllers.
 
 ---
 
-## 9. MuJoCo as Ground Truth
+## 9. MuJoCo Comparison Workflow
 
-The script `scripts/dynamics/ankle_dynamics_mujoco.py` uses MuJoCo geometry directly as an external reference.
+The script `scripts/dynamics/ankle_dynamics_mujoco.py` now performs a stepped MuJoCo runtime comparison against the analytical model in `src/pndbotics_ankle`.
 
 The main idea is:
 
-1. Fix ankle pitch and roll in the MJCF model.
-2. Read the actual site positions of:
-   - `ankleLeft_B1`, `ankleLeft_B2`
-   - `ankleToeLeft_C1`, `ankleToeLeft_C2`
-3. Solve motor angles numerically such that:
+1. Generate the theoretical motor-angle curves directly from `CustomAnkleKinematics.IK(roll, pitch)` over the commanded roll/pitch sweep.
+2. Run the MuJoCo model forward with `mj_step(...)` under the chosen ankle-space drive logic.
+3. Read the runtime motor sensors:
+   - `pos_ankleMotor_Left_1`
+   - `pos_ankleMotor_Left_2`
+4. Compare MuJoCo runtime motor measurements against the independent analytical curves from `src/pndbotics_ankle`.
 
-\[
-\|B_1 - C_1\| = L_1,
-\qquad
-\|B_2 - C_2\| = L_2
-\]
+This means the plotted theory values are produced by the repository's analytical source of truth, while MuJoCo serves as an external simulation reference.
 
-This provides an independent geometric solution that does not depend on the analytical implementation details in `CustomAnkleKinematics`.
+The same calibrated motor-coordinate relationship is also used in the Pinocchio scripts so that:
 
-Therefore, MuJoCo is used in this repository as a **ground-truth reference** for checking:
+- the theory layer remains in `src/pndbotics_ankle`,
+- the XML motor-joint coordinates remain in MJCF / Pinocchio space,
+- and branch / sign / home-offset mismatches do not silently corrupt the visualized motion.
 
-- motor-angle prediction
-- workspace consistency
-- geometric parameter consistency
-- error trends under pitch/roll sweeps
+Therefore, MuJoCo is used in this repository as a **runtime cross-check tool** for checking:
+
+- motor-angle prediction trends
+- runtime tracking behavior under pitch/roll sweeps
+- geometric consistency between XML and analytical parameters
+- large-motion mismatch sources such as compliance, settling, and control limitations
 
 ---
 
@@ -481,15 +518,16 @@ So the dynamic anomalies previously observed in the scripts were **not caused by
 ### Dynamics scripts
 
 - `ankle_dynamics_mujoco.py`: MuJoCo-based verification
-- `ankle_dynamics_headless.py`: lightweight Pinocchio analysis without visualization
-- `ankle_dynamics_pinocchio.py`: similar analysis with visualization support
+- `ankle_dynamics_headless.py`: lightweight Pinocchio analysis using shared src kinematics
+- `ankle_dynamics_pinocchio.py`: Pinocchio + Meshcat analysis using shared src kinematics
 - `mujoco_model_viewer.py`: direct model inspection
 
 The intended workflow is:
 
 1. use `CustomAnkleKinematics` as the analytical source of truth;
-2. verify geometry and trends with MuJoCo;
-3. use Pinocchio for reduced-order dynamic inspection and parameter sensitivity analysis.
+2. map analytical crank angles to XML motor-joint coordinates through the calibrated home/sign convention;
+3. verify runtime trends with MuJoCo;
+4. use Pinocchio for reduced-order dynamic inspection and parameter sensitivity analysis.
 
 ---
 
@@ -499,7 +537,8 @@ The intended workflow is:
 2. The Jacobian-based dynamic mapping is **local** and depends on the operating pose.
 3. Near singular configurations, Jacobian conditioning deteriorates and both torque and apparent inertia can grow rapidly.
 4. The headless inverse-dynamics demonstration currently neglects the full \(\dot J \dot q\) term in acceleration mapping, so it should be viewed as a local engineering approximation.
-5. MuJoCo remains the preferred ground-truth tool for cross-checking large-motion behavior.
+5. MuJoCo remains the preferred runtime cross-check tool for large-motion behavior, while `src/pndbotics_ankle` remains the analytical source of truth.
+6. The XML motor-joint coordinates are not identical to the analytical crank-angle variable; comparisons and visualization must respect the calibrated sign/home mapping.
 
 ---
 
@@ -526,7 +565,7 @@ This repository models the ADAM Pro ankle as a two-input, two-output parallel me
 - an analytical geometric model for IK/FK/Jacobians;
 - Jacobian-based speed/torque transmission analysis;
 - reduced-order dynamic mapping between ankle space and motor space;
-- MuJoCo-based geometric verification as ground truth;
+- MuJoCo-based runtime verification against the analytical model;
 - MJCF-integrated inertial parameters for dynamic simulation.
 
 Together, these tools provide a practical workflow for mechanism analysis, dynamic intuition, and model verification.

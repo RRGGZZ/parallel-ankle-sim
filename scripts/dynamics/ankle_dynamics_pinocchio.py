@@ -1,15 +1,20 @@
 """
-使用 Pinocchio 进行脚踝并联机构的正逆运动学、动力学求解
-使用 Meshcat 进行可视化（含连杆可视化 + 并联约束求解 + 动力学计算）
+使用 Pinocchio 进行脚踝并联机构的动力学求解与可视化。
+
+运动学部分统一使用 src/pndbotics_ankle.CustomAnkleKinematics，
+Pinocchio / Meshcat 仅用于刚体动力学量与可视化。
 """
-import os
+import sys
 from pathlib import Path
 import numpy as np
 import pinocchio as pin
 from pinocchio.visualize import MeshcatVisualizer
 import meshcat.geometry as mg
-from scipy.optimize import fsolve
 import time
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+
+from pndbotics_ankle import CustomAnkleKinematics
 
 # Resolve project root from this script location
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -18,6 +23,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 mjcf_path = PROJECT_ROOT / "adam_pro" / "adam_pro.xml"
 model, collision_model, visual_model = pin.buildModelsFromMJCF(str(mjcf_path))
 data = model.createData()
+ankle_kin = CustomAnkleKinematics()
 
 print(f"模型名称: {model.name}")
 print(f"自由度数量: {model.nq}")
@@ -48,6 +54,21 @@ ankle_motor_right_1_idx = get_joint_q_index(ankle_motor_right_1_id)
 ankle_motor_right_2_idx = get_joint_q_index(ankle_motor_right_2_id)
 ankle_pitch_right_idx   = get_joint_q_index(ankle_pitch_right_id)
 ankle_roll_right_idx    = get_joint_q_index(ankle_roll_right_id)
+
+q_neutral = pin.neutral(model)
+q1_home_src, q2_home_src = ankle_kin.home_position
+q1_home_raw_left = float(q_neutral[ankle_motor_left_1_idx])
+q2_home_raw_left = float(q_neutral[ankle_motor_left_2_idx])
+q1_home_raw_right = float(q_neutral[ankle_motor_right_1_idx])
+q2_home_raw_right = float(q_neutral[ankle_motor_right_2_idx])
+
+
+def raw_motor_to_src(raw_q: float, raw_home: float, src_home: float) -> float:
+    return src_home - (raw_q - raw_home)
+
+
+def src_motor_to_raw(src_q: float, src_home: float, raw_home: float) -> float:
+    return raw_home - (src_q - src_home)
 
 print(f"\n左脚踝关节 q-index:")
 print(f"  ankleMotor_Left_1: {ankle_motor_left_1_idx}")
@@ -81,115 +102,42 @@ for name in site_names:
     else:
         print(f"  未找到: {name}")
 
-# ─────────────────────────────────────────────
-# 并联机构约束参数 (与 CustomAnkleKinematics 一致: 280mm, 208mm)
-# ─────────────────────────────────────────────
-L_LEFT_1  = 0.280
-L_LEFT_2  = 0.208
-L_RIGHT_1 = 0.280
-L_RIGHT_2 = 0.208
-
-# ─────────────────────────────────────────────
-# 并联机构正运动学约束求解
-# ─────────────────────────────────────────────
-
-def _constraint_error_left(ankle_angles, q_with_motors):
-    """
-    左脚约束残差：
-    在给定电机角度（已写入 q_with_motors）的情况下，
-    返回 [|B1-C1| - L1,  |B2-C2| - L2]，使其趋近于 0。
-    """
-    pitch, roll = ankle_angles
-    q = q_with_motors.copy()
-    q[ankle_pitch_left_idx] = pitch
-    q[ankle_roll_left_idx]  = roll
-
-    pin.forwardKinematics(model, data, q)
-    pin.updateFramePlacements(model, data)
-
-    p_B1 = data.oMf[frame_ids["ankleLeft_B1"]].translation
-    p_C1 = data.oMf[frame_ids["ankleToeLeft_C1"]].translation
-    p_B2 = data.oMf[frame_ids["ankleLeft_B2"]].translation
-    p_C2 = data.oMf[frame_ids["ankleToeLeft_C2"]].translation
-
-    return [np.linalg.norm(p_B1 - p_C1) - L_LEFT_1,
-            np.linalg.norm(p_B2 - p_C2) - L_LEFT_2]
-
-
-def _constraint_error_right(ankle_angles, q_with_motors):
-    """右脚约束残差"""
-    pitch, roll = ankle_angles
-    q = q_with_motors.copy()
-    q[ankle_pitch_right_idx] = pitch
-    q[ankle_roll_right_idx]  = roll
-
-    pin.forwardKinematics(model, data, q)
-    pin.updateFramePlacements(model, data)
-
-    p_B1 = data.oMf[frame_ids["ankleRight_B1"]].translation
-    p_C1 = data.oMf[frame_ids["ankleToeRight_C1"]].translation
-    p_B2 = data.oMf[frame_ids["ankleRight_B2"]].translation
-    p_C2 = data.oMf[frame_ids["ankleToeRight_C2"]].translation
-
-    return [np.linalg.norm(p_B1 - p_C1) - L_RIGHT_1,
-            np.linalg.norm(p_B2 - p_C2) - L_RIGHT_2]
-
-
-# 热启动：上一次求解结果作为下一次初始猜测，加快收敛
-_last_left_solution  = np.array([0.0, 0.0])
-_last_right_solution = np.array([0.0, 0.0])
-
-
 def solve_parallel_fk(q_base,
                       motor1_left=None,  motor2_left=None,
                       motor1_right=None, motor2_right=None):
-    """
-    并联机构正运动学：给定电机角度，数值求解 ankle pitch/roll。
-
-    参数:
-        q_base:       基础配置向量（其余关节角度保持不变）
-        motor1/2_left/right: 电机角度（为 None 则沿用 q_base 中的值）
-
-    返回:
-        q_solved: 包含正确 ankle pitch/roll 的完整配置向量
-    """
-    global _last_left_solution, _last_right_solution
-
     q_solved = q_base.copy()
 
-    # 写入电机角度
     if motor1_left  is not None: q_solved[ankle_motor_left_1_idx]  = motor1_left
     if motor2_left  is not None: q_solved[ankle_motor_left_2_idx]  = motor2_left
     if motor1_right is not None: q_solved[ankle_motor_right_1_idx] = motor1_right
     if motor2_right is not None: q_solved[ankle_motor_right_2_idx] = motor2_right
 
-    # ── 求解左脚 ──
-    left_sites = ["ankleLeft_B1", "ankleLeft_B2", "ankleToeLeft_C1", "ankleToeLeft_C2"]
-    if all(k in frame_ids for k in left_sites):
-        sol, info, ier, msg = fsolve(
-            _constraint_error_left, _last_left_solution,
-            args=(q_solved,), full_output=True, xtol=1e-8
-        )
-        if ier == 1:
-            _last_left_solution = sol
-        else:
-            print(f"  [警告] 左脚约束求解未收敛: {msg.strip()}")
-        q_solved[ankle_pitch_left_idx] = sol[0]
-        q_solved[ankle_roll_left_idx]  = sol[1]
+    q1_left_src = raw_motor_to_src(q_solved[ankle_motor_left_1_idx], q1_home_raw_left, q1_home_src)
+    q2_left_src = raw_motor_to_src(q_solved[ankle_motor_left_2_idx], q2_home_raw_left, q2_home_src)
+    q1_right_src = raw_motor_to_src(q_solved[ankle_motor_right_1_idx], q1_home_raw_right, q1_home_src)
+    q2_right_src = raw_motor_to_src(q_solved[ankle_motor_right_2_idx], q2_home_raw_right, q2_home_src)
 
-    # ── 求解右脚 ──
-    right_sites = ["ankleRight_B1", "ankleRight_B2", "ankleToeRight_C1", "ankleToeRight_C2"]
-    if all(k in frame_ids for k in right_sites):
-        sol, info, ier, msg = fsolve(
-            _constraint_error_right, _last_right_solution,
-            args=(q_solved,), full_output=True, xtol=1e-8
-        )
-        if ier == 1:
-            _last_right_solution = sol
-        else:
-            print(f"  [警告] 右脚约束求解未收敛: {msg.strip()}")
-        q_solved[ankle_pitch_right_idx] = sol[0]
-        q_solved[ankle_roll_right_idx]  = sol[1]
+    roll_left, pitch_left = ankle_kin.FK(
+        q1_left_src,
+        q2_left_src,
+        initial_guess=(
+            q_solved[ankle_roll_left_idx],
+            q_solved[ankle_pitch_left_idx],
+        ),
+    )
+    roll_right, pitch_right = ankle_kin.FK(
+        q1_right_src,
+        q2_right_src,
+        initial_guess=(
+            q_solved[ankle_roll_right_idx],
+            q_solved[ankle_pitch_right_idx],
+        ),
+    )
+
+    q_solved[ankle_pitch_left_idx] = pitch_left
+    q_solved[ankle_roll_left_idx] = roll_left
+    q_solved[ankle_pitch_right_idx] = pitch_right
+    q_solved[ankle_roll_right_idx] = roll_right
 
     return q_solved
 
@@ -200,28 +148,17 @@ def solve_parallel_fk(q_base,
 def inverse_kinematics_ankle(desired_pitch, desired_roll, ankle_type='left', q_seed=None):
     if q_seed is None:
         q_seed = pin.neutral(model)
-
+    del q_seed
+    q1_src, q2_src = ankle_kin.IK(desired_roll, desired_pitch)
     if ankle_type == 'left':
-        motor1_idx, motor2_idx = ankle_motor_left_1_idx, ankle_motor_left_2_idx
-        pitch_idx, roll_idx = ankle_pitch_left_idx, ankle_roll_left_idx
-    else:
-        motor1_idx, motor2_idx = ankle_motor_right_1_idx, ankle_motor_right_2_idx
-        pitch_idx, roll_idx = ankle_pitch_right_idx, ankle_roll_right_idx
-
-    def residual(motor_angles):
-        q_test = q_seed.copy()
-        q_test[motor1_idx] = motor_angles[0]
-        q_test[motor2_idx] = motor_angles[1]
-        q_test = solve_parallel_fk(q_test)
         return np.array([
-            q_test[pitch_idx] - desired_pitch,
-            q_test[roll_idx] - desired_roll,
+            src_motor_to_raw(q1_src, q1_home_src, q1_home_raw_left),
+            src_motor_to_raw(q2_src, q2_home_src, q2_home_raw_left),
         ])
-
-    sol, info, ier, msg = fsolve(residual, np.array([q_seed[motor1_idx], q_seed[motor2_idx]]), full_output=True, xtol=1e-8)
-    if ier != 1:
-        raise RuntimeError(f"逆运动学求解失败: {msg.strip()}")
-    return sol
+    return np.array([
+        src_motor_to_raw(q1_src, q1_home_src, q1_home_raw_right),
+        src_motor_to_raw(q2_src, q2_home_src, q2_home_raw_right),
+    ])
 
 
 # ─────────────────────────────────────────────
@@ -229,30 +166,23 @@ def inverse_kinematics_ankle(desired_pitch, desired_roll, ankle_type='left', q_s
 # ─────────────────────────────────────────────
 
 def compute_ankle_jacobian_numerical(q_config, ankle_type='left', delta=1e-7):
+    del delta
     if ankle_type == 'left':
-        motor_idx = [ankle_motor_left_1_idx, ankle_motor_left_2_idx]
-        pitch_idx = ankle_pitch_left_idx
-        roll_idx = ankle_roll_left_idx
+        roll = q_config[ankle_roll_left_idx]
+        pitch = q_config[ankle_pitch_left_idx]
+        q1_src = raw_motor_to_src(q_config[ankle_motor_left_1_idx], q1_home_raw_left, q1_home_src)
+        q2_src = raw_motor_to_src(q_config[ankle_motor_left_2_idx], q2_home_raw_left, q2_home_src)
     else:
-        motor_idx = [ankle_motor_right_1_idx, ankle_motor_right_2_idx]
-        pitch_idx = ankle_pitch_right_idx
-        roll_idx = ankle_roll_right_idx
+        roll = q_config[ankle_roll_right_idx]
+        pitch = q_config[ankle_pitch_right_idx]
+        q1_src = raw_motor_to_src(q_config[ankle_motor_right_1_idx], q1_home_raw_right, q1_home_src)
+        q2_src = raw_motor_to_src(q_config[ankle_motor_right_2_idx], q2_home_raw_right, q2_home_src)
 
-    J = np.zeros((2, 2))
-
-    for motor_i, m_idx in enumerate(motor_idx):
-        q_plus = q_config.copy()
-        q_plus[m_idx] += delta
-        q_plus = solve_parallel_fk(q_plus)
-
-        q_minus = q_config.copy()
-        q_minus[m_idx] -= delta
-        q_minus = solve_parallel_fk(q_minus)
-
-        J[0, motor_i] = (q_plus[pitch_idx] - q_minus[pitch_idx]) / (2.0 * delta)
-        J[1, motor_i] = (q_plus[roll_idx] - q_minus[roll_idx]) / (2.0 * delta)
-
-    return J
+    J_vel, _ = ankle_kin.calc_Jacobians(roll, pitch, q1=q1_src, q2=q2_src)
+    if J_vel is None:
+        raise RuntimeError("Shared kinematics Jacobian unavailable at this pose")
+    J_joint = np.linalg.solve(J_vel, np.eye(2))
+    return J_joint[[1, 0], :]
 
 
 def compute_motor_torque_to_ankle_force(q_config, ankle_type='left'):
@@ -426,7 +356,7 @@ print(f"\nMeshcat 可视化已启动，访问: {viz.viewer.url()}")
 # 初始姿态：在零电机角度下先求一次约束，
 # 确保初始 ankle pitch/roll 与连杆长度吻合
 # ─────────────────────────────────────────────
-q = pin.neutral(model)
+q = q_neutral.copy()
 q = solve_parallel_fk(q,
                       motor1_left=0., motor2_left=0.,
                       motor1_right=0., motor2_right=0.)
@@ -569,11 +499,8 @@ for pitch_accel, roll_accel, description in desired_accelerations:
     print(f"  所需电机扭矩: Motor_1={tau_motor[0]:+.4f}, Motor_2={tau_motor[1]:+.4f} N·m")
 
 # ─────────────────────────────────────────────
-# 保持可视化运行
+# 保持可视化短暂停留后退出，便于脚本化验证
 # ─────────────────────────────────────────────
-print("\n=== 可视化运行中，按 Ctrl+C 退出 ===")
-try:
-    while True:
-        time.sleep(0.1)
-except KeyboardInterrupt:
-    print("\n程序退出")
+print("\n=== 可视化保持 3 秒后自动退出 ===")
+time.sleep(3.0)
+print("程序退出")

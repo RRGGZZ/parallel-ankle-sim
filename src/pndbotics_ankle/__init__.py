@@ -164,7 +164,14 @@ class CustomAnkleKinematics:
         
         return q_out[0], q_out[1]
     
-    def FK(self, q1: float, q2: float, tol: float = 1e-8, max_iter: int = 30):
+    def FK(
+        self,
+        q1: float,
+        q2: float,
+        tol: float = 1e-8,
+        max_iter: int = 30,
+        initial_guess: tuple[float, float] | None = None,
+    ):
         """
         Forward Kinematics: Compute ankle orientation from motor angles.
         
@@ -176,6 +183,8 @@ class CustomAnkleKinematics:
             Convergence tolerance (default: 1e-8)
         max_iter : int, optional
             Maximum Newton iterations (default: 30)
+        initial_guess : tuple of float, optional
+            Initial guess for (roll, pitch). If None, defaults to neutral.
         
         Returns
         -------
@@ -199,8 +208,12 @@ class CustomAnkleKinematics:
             self.r2 * np.sin(q2)
         ])
         
-        # Initial guess: neutral position (converges well near home)
-        tx, ty = 0.0, 0.0
+        if initial_guess is None:
+            tx, ty = 0.0, 0.0
+        else:
+            tx, ty = float(initial_guess[0]), float(initial_guess[1])
+
+        g = np.zeros(2)
         
         for it in range(max_iter):
             R = self.calc_R(tx, ty)

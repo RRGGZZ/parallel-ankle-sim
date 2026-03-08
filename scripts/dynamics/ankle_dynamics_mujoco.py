@@ -5,8 +5,8 @@ This version does not use MuJoCo as a static geometric solver. Instead it:
 1. Runs the MuJoCo simulation forward in time.
 2. Applies external ankle pitch/roll torques to drive the passive ankle toward a target pose.
 3. Reads motor joint angles directly from MuJoCo runtime sensors while the mechanism evolves.
-4. Compares those sensor readings against theory-predicted motor angles computed from the
-   measured ankle pose.
+4. Compares those sensor readings against theory motor angles computed directly from the
+   commanded roll/pitch sweep using ``src/pndbotics_ankle.CustomAnkleKinematics``.
 
 The goal is to validate the motor-angle relationship against a genuine MuJoCo runtime trajectory,
 not against a qpos-teleported equilibrium state.
@@ -101,8 +101,20 @@ L2 = np.linalg.norm(data.site_xpos[sid_B2] - data.site_xpos[sid_C2])
 ankle_kin = CustomAnkleKinematics()
 
 
-def theory_motor_sensor_delta(q_theory: float, q_theory_home: float) -> float:
-    return wrap_to_pi(-(q_theory - q_theory_home))
+def src_motor_sensor_delta(
+    q_theory: float,
+    q_theory_home: float,
+    q_sensor_home: float,
+) -> float:
+    """Map src motor angle output into MuJoCo motor-sensor delta space.
+
+    The authoritative motor geometry comes from ``CustomAnkleKinematics``.
+    MuJoCo motor sensors use a different sign/reference convention, so we align
+    them by anchoring at the runtime home sensor value and using the src-model
+    home motor angle as the reference.
+    """
+    q_sensor_pred = q_sensor_home - (q_theory - q_theory_home)
+    return wrap_to_pi(q_sensor_pred - q_sensor_home)
 
 
 def reset_runtime() -> None:
@@ -212,7 +224,7 @@ def simulate_to_pose(target_pitch: float, target_roll: float) -> dict[str, float
 home_state = simulate_to_pose(0.0, 0.0)
 q1_home_sensor = home_state["motor1_mean"]
 q2_home_sensor = home_state["motor2_mean"]
-q1_home_th, q2_home_th = ankle_kin.IK(home_state["roll_mean"], home_state["pitch_mean"])
+q1_home_src, q2_home_src = ankle_kin.home_position
 
 
 def scan(axis: str) -> dict[str, list[float]]:
@@ -243,12 +255,12 @@ def scan(axis: str) -> dict[str, list[float]]:
         target_pitch = float(0.0 if axis == "roll" else value)
 
         settled = simulate_to_pose(target_pitch, target_roll)
-        q1_th, q2_th = ankle_kin.IK(settled["roll_mean"], settled["pitch_mean"])
+        q1_src, q2_src = ankle_kin.IK(target_roll, target_pitch)
 
         dq1_mj = wrap_to_pi(settled["motor1_mean"] - q1_home_sensor)
         dq2_mj = wrap_to_pi(settled["motor2_mean"] - q2_home_sensor)
-        dq1_th = theory_motor_sensor_delta(q1_th, q1_home_th)
-        dq2_th = theory_motor_sensor_delta(q2_th, q2_home_th)
+        dq1_th = src_motor_sensor_delta(q1_src, q1_home_src, q1_home_sensor)
+        dq2_th = src_motor_sensor_delta(q2_src, q2_home_src, q2_home_sensor)
 
         results["command"].append(value)
         results["mj_m1"].append(dq1_mj)
@@ -276,11 +288,15 @@ print("ANKLE MOTOR-ANGLE VERIFICATION (STEPPED MUJOCO SIMULATION)")
 print("=" * 60)
 print(f"MuJoCo link lengths: L1={L1 * 1000:.2f} mm, L2={L2 * 1000:.2f} mm")
 print(f"Theory link lengths: l1={ankle_kin.l1:.2f} mm, l2={ankle_kin.l2:.2f} mm")
-print("Comparison quantity: runtime motor sensors from stepped MuJoCo simulation vs theory motor prediction")
+print("Comparison quantity: runtime motor sensors from stepped MuJoCo simulation vs direct src/pndbotics_ankle formula output")
 print(
     f"Home runtime state: pitch={home_state['pitch_mean']:+.6f} rad, roll={home_state['roll_mean']:+.6f} rad, "
     f"M1={q1_home_sensor:+.6f} rad, M2={q2_home_sensor:+.6f} rad"
 )
+print(
+    f"Source-model home motor angles: q1={q1_home_src:+.6f} rad, q2={q2_home_src:+.6f} rad"
+)
+print("Theory curves below are generated directly from the commanded sweep using src/pndbotics_ankle, without using MuJoCo pose measurements.")
 
 print("\nScanning roll sweep...")
 roll_data = scan("roll")
@@ -336,10 +352,10 @@ print("Note: if the MuJoCo curve is hard to see in the roll-angle panel, it is n
 fig, axes = plt.subplots(2, 2, figsize=(14, 10), sharex=False)
 
 ax = axes[0, 0]
-ax.plot(roll_data["command"], roll_data["th_m1"], color="navy", ls="-", lw=2, alpha=0.85, label="Theory M1")
-ax.plot(roll_data["command"], roll_data["mj_m1"], color="deepskyblue", ls="--", lw=2.5, marker="o", ms=4, mfc="white", mec="deepskyblue", label="MuJoCo M1", zorder=4)
-ax.plot(roll_data["command"], roll_data["th_m2"], color="darkred", ls="-", lw=2, alpha=0.85, label="Theory M2")
-ax.plot(roll_data["command"], roll_data["mj_m2"], color="orange", ls="--", lw=2.5, marker="s", ms=4, mfc="white", mec="orange", label="MuJoCo M2", zorder=4)
+ax.plot(roll_data["command"], roll_data["th_m1"], "b-", lw=2, label="Theory M1")
+ax.plot(roll_data["command"], roll_data["mj_m1"], "b--", lw=2, label="MuJoCo M1")
+ax.plot(roll_data["command"], roll_data["th_m2"], "r-", lw=2, label="Theory M2")
+ax.plot(roll_data["command"], roll_data["mj_m2"], "r--", lw=2, label="MuJoCo M2")
 ax.set_xlabel("Roll target (rad)")
 ax.set_ylabel("Motor angle relative to runtime home (rad)")
 ax.set_title("Roll Sweep: Motor Angles")
@@ -347,10 +363,10 @@ ax.grid(True, alpha=0.3)
 ax.legend()
 
 ax = axes[0, 1]
-ax.plot(pitch_data["command"], pitch_data["th_m1"], color="navy", ls="-", lw=2, alpha=0.85, label="Theory M1")
-ax.plot(pitch_data["command"], pitch_data["mj_m1"], color="deepskyblue", ls="--", lw=2.5, marker="o", ms=4, mfc="white", mec="deepskyblue", label="MuJoCo M1", zorder=4)
-ax.plot(pitch_data["command"], pitch_data["th_m2"], color="darkred", ls="-", lw=2, alpha=0.85, label="Theory M2")
-ax.plot(pitch_data["command"], pitch_data["mj_m2"], color="orange", ls="--", lw=2.5, marker="s", ms=4, mfc="white", mec="orange", label="MuJoCo M2", zorder=4)
+ax.plot(pitch_data["command"], pitch_data["th_m1"], "b-", lw=2, label="Theory M1")
+ax.plot(pitch_data["command"], pitch_data["mj_m1"], "b--", lw=2, label="MuJoCo M1")
+ax.plot(pitch_data["command"], pitch_data["th_m2"], "r-", lw=2, label="Theory M2")
+ax.plot(pitch_data["command"], pitch_data["mj_m2"], "r--", lw=2, label="MuJoCo M2")
 ax.set_xlabel("Pitch target (rad)")
 ax.set_ylabel("Motor angle relative to runtime home (rad)")
 ax.set_title("Pitch Sweep: Motor Angles")

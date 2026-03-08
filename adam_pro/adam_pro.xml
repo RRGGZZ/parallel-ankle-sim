@@ -496,19 +496,19 @@
   </actuator>
 
   <tendon>
-    <spatial name="ankle_link_left_1" width="0.004" rgba="1 0.5 0.1 1" limited="false" springlength="0.280" stiffness="80000" damping="800">
+    <spatial name="ankle_link_left_1" width="0.004" rgba="1 0.5 0.1 1" limited="true" range="0.27995 0.28005" springlength="0.280" stiffness="1000000" damping="2000">
       <site site="ankleLeft_B1" />
       <site site="ankleToeLeft_C1" />
     </spatial>
-    <spatial name="ankle_link_left_2" width="0.004" rgba="1 0.5 0.1 1" limited="false" springlength="0.208" stiffness="80000" damping="800">
+    <spatial name="ankle_link_left_2" width="0.004" rgba="1 0.5 0.1 1" limited="true" range="0.20795 0.20805" springlength="0.208" stiffness="1000000" damping="2000">
       <site site="ankleLeft_B2" />
       <site site="ankleToeLeft_C2" />
     </spatial>
-    <spatial name="ankle_link_right_1" width="0.004" rgba="1 0.5 0.1 1" limited="false" springlength="0.280" stiffness="80000" damping="800">
+    <spatial name="ankle_link_right_1" width="0.004" rgba="1 0.5 0.1 1" limited="true" range="0.27995 0.28005" springlength="0.280" stiffness="1000000" damping="2000">
       <site site="ankleRight_B1" />
       <site site="ankleToeRight_C1" />
     </spatial>
-    <spatial name="ankle_link_right_2" width="0.004" rgba="1 0.5 0.1 1" limited="false" springlength="0.208" stiffness="80000" damping="800">
+    <spatial name="ankle_link_right_2" width="0.004" rgba="1 0.5 0.1 1" limited="true" range="0.20795 0.20805" springlength="0.208" stiffness="1000000" damping="2000">
       <site site="ankleRight_B2" />
       <site site="ankleToeRight_C2" />
     </spatial>

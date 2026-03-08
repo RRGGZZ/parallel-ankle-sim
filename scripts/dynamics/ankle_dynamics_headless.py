@@ -1,13 +1,18 @@
 """
 脚踝并联机构动力学演示（轻量版，不需要Meshcat可视化）
-用于快速测试动力学计算功能
+用于快速测试动力学计算功能。
+
+运动学部分统一使用 src/pndbotics_ankle.CustomAnkleKinematics，
+Pinocchio 仅用于刚体动力学量计算。
 """
-import os
+import sys
 from pathlib import Path
 import numpy as np
 import pinocchio as pin
-from scipy.optimize import fsolve
-import time
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+
+from pndbotics_ankle import CustomAnkleKinematics
 
 # Resolve project root from this script location
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -16,6 +21,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 mjcf_path = PROJECT_ROOT / "adam_pro" / "adam_pro.xml"
 model, collision_model, visual_model = pin.buildModelsFromMJCF(str(mjcf_path))
 data = model.createData()
+ankle_kin = CustomAnkleKinematics()
 
 print(f"模型名称: {model.name}")
 print(f"自由度数量: {model.nq}")
@@ -37,69 +43,38 @@ ankle_motor_left_2_idx  = get_joint_q_index(ankle_motor_left_2_id)
 ankle_pitch_left_idx    = get_joint_q_index(ankle_pitch_left_id)
 ankle_roll_left_idx     = get_joint_q_index(ankle_roll_left_id)
 
-# ─────────────────────────────────────────────
-# 查找连杆 site frames
-# ─────────────────────────────────────────────
-site_names = [
-    "ankleLeft_B1",    "ankleLeft_B2",
-    "ankleToeLeft_C1", "ankleToeLeft_C2",
-]
+q_neutral = pin.neutral(model)
+q1_home_src, q2_home_src = ankle_kin.home_position
+q1_home_raw = float(q_neutral[ankle_motor_left_1_idx])
+q2_home_raw = float(q_neutral[ankle_motor_left_2_idx])
 
-frame_ids = {}
-print("查找连杆 site frames:")
-for name in site_names:
-    fid = model.getFrameId(name)
-    if fid < len(model.frames):
-        frame_ids[name] = fid
-        print(f"  找到: {name} -> frame {fid}")
-    else:
-        print(f"  未找到: {name}")
 
-# ─────────────────────────────────────────────
-# 并联机构约束参数 (与 CustomAnkleKinematics 一致: 280mm, 208mm)
-# ─────────────────────────────────────────────
-L_LEFT_1  = 0.280
-L_LEFT_2  = 0.208
+def raw_motor_to_src(raw_q: float, raw_home: float, src_home: float) -> float:
+    return src_home - (raw_q - raw_home)
 
-# ─────────────────────────────────────────────
-# 约束求解函数
-# ─────────────────────────────────────────────
-_last_left_solution = np.array([0.0, 0.0])
 
-def _constraint_error_left(ankle_angles, q_with_motors):
-    pitch, roll = ankle_angles
-    q = q_with_motors.copy()
-    q[ankle_pitch_left_idx] = pitch
-    q[ankle_roll_left_idx]  = roll
-
-    pin.forwardKinematics(model, data, q)
-    pin.updateFramePlacements(model, data)
-
-    p_B1 = data.oMf[frame_ids["ankleLeft_B1"]].translation
-    p_C1 = data.oMf[frame_ids["ankleToeLeft_C1"]].translation
-    p_B2 = data.oMf[frame_ids["ankleLeft_B2"]].translation
-    p_C2 = data.oMf[frame_ids["ankleToeLeft_C2"]].translation
-
-    return [np.linalg.norm(p_B1 - p_C1) - L_LEFT_1,
-            np.linalg.norm(p_B2 - p_C2) - L_LEFT_2]
+def src_motor_to_raw(src_q: float, src_home: float, raw_home: float) -> float:
+    return raw_home - (src_q - src_home)
 
 def solve_parallel_fk(q_base, motor1_left=None, motor2_left=None):
-    global _last_left_solution
     q_solved = q_base.copy()
     
     if motor1_left is not None: q_solved[ankle_motor_left_1_idx] = motor1_left
     if motor2_left is not None: q_solved[ankle_motor_left_2_idx] = motor2_left
 
-    left_sites = ["ankleLeft_B1", "ankleLeft_B2", "ankleToeLeft_C1", "ankleToeLeft_C2"]
-    if all(k in frame_ids for k in left_sites):
-        sol, info, ier, msg = fsolve(
-            _constraint_error_left, _last_left_solution,
-            args=(q_solved,), full_output=True, xtol=1e-8
-        )
-        if ier == 1:
-            _last_left_solution = sol
-        q_solved[ankle_pitch_left_idx] = sol[0]
-        q_solved[ankle_roll_left_idx]  = sol[1]
+    q1_src = raw_motor_to_src(q_solved[ankle_motor_left_1_idx], q1_home_raw, q1_home_src)
+    q2_src = raw_motor_to_src(q_solved[ankle_motor_left_2_idx], q2_home_raw, q2_home_src)
+
+    roll_left, pitch_left = ankle_kin.FK(
+        q1_src,
+        q2_src,
+        initial_guess=(
+            q_solved[ankle_roll_left_idx],
+            q_solved[ankle_pitch_left_idx],
+        ),
+    )
+    q_solved[ankle_pitch_left_idx] = pitch_left
+    q_solved[ankle_roll_left_idx] = roll_left
 
     return q_solved
 
@@ -108,29 +83,16 @@ def solve_parallel_fk(q_base, motor1_left=None, motor2_left=None):
 # ─────────────────────────────────────────────
 
 def compute_ankle_jacobian_numerical(q_config, delta=1e-7):
-    motor_idx = [ankle_motor_left_1_idx, ankle_motor_left_2_idx]
-    J_m2j = np.zeros((2, 2))
-
-    for motor_i, m_idx in enumerate(motor_idx):
-        # 正向扰动
-        q_plus = q_config.copy()
-        q_plus[m_idx] += delta
-        q_plus = solve_parallel_fk(q_plus)
-
-        # 负向扰动
-        q_minus = q_config.copy()
-        q_minus[m_idx] -= delta
-        q_minus = solve_parallel_fk(q_minus)
-
-        pitch_plus = q_plus[ankle_pitch_left_idx]
-        roll_plus = q_plus[ankle_roll_left_idx]
-        pitch_minus = q_minus[ankle_pitch_left_idx]
-        roll_minus = q_minus[ankle_roll_left_idx]
-
-        J_m2j[0, motor_i] = (pitch_plus - pitch_minus) / (2.0 * delta)
-        J_m2j[1, motor_i] = (roll_plus - roll_minus) / (2.0 * delta)
-
-    return J_m2j
+    del delta
+    roll = q_config[ankle_roll_left_idx]
+    pitch = q_config[ankle_pitch_left_idx]
+    q1_src = raw_motor_to_src(q_config[ankle_motor_left_1_idx], q1_home_raw, q1_home_src)
+    q2_src = raw_motor_to_src(q_config[ankle_motor_left_2_idx], q2_home_raw, q2_home_src)
+    J_vel, _ = ankle_kin.calc_Jacobians(roll, pitch, q1=q1_src, q2=q2_src)
+    if J_vel is None:
+        raise RuntimeError("Shared kinematics Jacobian unavailable at this pose")
+    J_joint = np.linalg.solve(J_vel, np.eye(2))
+    return J_joint[[1, 0], :]
 
 def compute_mass_matrix_ankle(q_config):
     J_m2j = compute_ankle_jacobian_numerical(q_config)
@@ -188,7 +150,7 @@ def compute_inverse_dynamics_ankle(q_config, qd_config, qdd_config):
 # ─────────────────────────────────────────────
 
 # 初始化配置
-q = pin.neutral(model)
+q = q_neutral.copy()
 q = solve_parallel_fk(q, motor1_left=0., motor2_left=0.)
 
 # 初始化速度和加速度（nv可能与nq不同）

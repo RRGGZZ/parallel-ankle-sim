@@ -1,4 +1,4 @@
-# PnDBotics Ankle Simulation
+# PNDbotics Ankle Simulation
 
 A parallel ankle mechanism simulation repository for academic research, featuring:
 - Theoretical geometric/Jacobian model analysis (workspace, velocity mapping, torque mapping, armature estimation)

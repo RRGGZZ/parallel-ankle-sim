@@ -197,14 +197,31 @@ def solve_parallel_fk(q_base,
 # ─────────────────────────────────────────────
 # 逆运动学：给定 pitch/roll 求电机角度（线性近似）
 # ─────────────────────────────────────────────
-def inverse_kinematics_ankle(desired_pitch, desired_roll):
-    """
-    脚踝逆运动学（线性近似）。
-    注：系数为简化近似，需根据实际并联机构几何关系标定。
-    """
-    motor1 = -2.0 * desired_pitch + 2.0 * desired_roll
-    motor2 = -2.0 * desired_pitch - 2.0 * desired_roll
-    return np.array([motor1, motor2])
+def inverse_kinematics_ankle(desired_pitch, desired_roll, ankle_type='left', q_seed=None):
+    if q_seed is None:
+        q_seed = pin.neutral(model)
+
+    if ankle_type == 'left':
+        motor1_idx, motor2_idx = ankle_motor_left_1_idx, ankle_motor_left_2_idx
+        pitch_idx, roll_idx = ankle_pitch_left_idx, ankle_roll_left_idx
+    else:
+        motor1_idx, motor2_idx = ankle_motor_right_1_idx, ankle_motor_right_2_idx
+        pitch_idx, roll_idx = ankle_pitch_right_idx, ankle_roll_right_idx
+
+    def residual(motor_angles):
+        q_test = q_seed.copy()
+        q_test[motor1_idx] = motor_angles[0]
+        q_test[motor2_idx] = motor_angles[1]
+        q_test = solve_parallel_fk(q_test)
+        return np.array([
+            q_test[pitch_idx] - desired_pitch,
+            q_test[roll_idx] - desired_roll,
+        ])
+
+    sol, info, ier, msg = fsolve(residual, np.array([q_seed[motor1_idx], q_seed[motor2_idx]]), full_output=True, xtol=1e-8)
+    if ier != 1:
+        raise RuntimeError(f"逆运动学求解失败: {msg.strip()}")
+    return sol
 
 
 # ─────────────────────────────────────────────
@@ -212,206 +229,105 @@ def inverse_kinematics_ankle(desired_pitch, desired_roll):
 # ─────────────────────────────────────────────
 
 def compute_ankle_jacobian_numerical(q_config, ankle_type='left', delta=1e-7):
-    """
-    数值计算脚踝并联机构的雅可比矩阵（电机 → 脚踝端点）。
-    
-    对于左脚：将电机角度的微小变化映射到脚踝末端的位置/速度变化。
-    
-    参数:
-        q_config:     配置向量
-        ankle_type:   'left' 或 'right'
-        delta:        数值微分步长
-    
-    返回:
-        J: 雅可比矩阵 (6, 2) - 将电机速度映射到脚踝末端速度
-           前3行为线速度，后3行为角速度
-    """
     if ankle_type == 'left':
         motor_idx = [ankle_motor_left_1_idx, ankle_motor_left_2_idx]
         pitch_idx = ankle_pitch_left_idx
         roll_idx = ankle_roll_left_idx
-        frame_b = "ankleLeft_B1"
-        frame_c = "ankleToeLeft_C1"
     else:
         motor_idx = [ankle_motor_right_1_idx, ankle_motor_right_2_idx]
         pitch_idx = ankle_pitch_right_idx
         roll_idx = ankle_roll_right_idx
-        frame_b = "ankleRight_B1"
-        frame_c = "ankleToeRight_C1"
-    
-    if frame_b not in frame_ids or frame_c not in frame_ids:
-        return np.zeros((6, 2))
-    
-    J = np.zeros((6, 2))
-    
-    # 数值微分：计算 F, R, T 相对于各电机的微分
+
+    J = np.zeros((2, 2))
+
     for motor_i, m_idx in enumerate(motor_idx):
-        # 正向扰动
         q_plus = q_config.copy()
         q_plus[m_idx] += delta
         q_plus = solve_parallel_fk(q_plus)
-        pin.forwardKinematics(model, data, q_plus)
-        pin.updateFramePlacements(model, data)
-        p_b_plus = data.oMf[frame_ids[frame_b]].translation.copy()
-        R_plus = data.oMf[frame_ids[frame_b]].rotation.copy()
-        
-        # 负向扰动
+
         q_minus = q_config.copy()
         q_minus[m_idx] -= delta
         q_minus = solve_parallel_fk(q_minus)
-        pin.forwardKinematics(model, data, q_minus)
-        pin.updateFramePlacements(model, data)
-        p_b_minus = data.oMf[frame_ids[frame_b]].translation.copy()
-        R_minus = data.oMf[frame_ids[frame_b]].rotation.copy()
-        
-        # 线速度微分
-        dp_dm = (p_b_plus - p_b_minus) / (2.0 * delta)
-        J[0:3, motor_i] = dp_dm
-        
-        # 角速度微分（通过旋转矩阵）
-        dR_dm = (R_plus - R_minus) / (2.0 * delta)
-        # 将旋转矩阵变化转换为角速度
-        # omega = 0.5 * [dR^T * dR]_vee，这里用简化形式
-        skew_omega = R_minus.T @ dR_dm / delta
-        omega_approx = np.array([skew_omega[2, 1], skew_omega[0, 2], skew_omega[1, 0]])
-        J[3:6, motor_i] = omega_approx
-    
+
+        J[0, motor_i] = (q_plus[pitch_idx] - q_minus[pitch_idx]) / (2.0 * delta)
+        J[1, motor_i] = (q_plus[roll_idx] - q_minus[roll_idx]) / (2.0 * delta)
+
     return J
 
 
 def compute_motor_torque_to_ankle_force(q_config, ankle_type='left'):
-    """
-    计算电机扭矩到脚踝端点力/扭矩的映射矩阵。
-    τ_ankle = J^T * τ_motor （静力学对偶）
-    
-    参数:
-        q_config:   配置向量
-        ankle_type: 'left' 或 'right'
-    
-    返回:
-        J_T: 转置的雅可比矩阵 (2, 6)
-    """
-    J = compute_ankle_jacobian_numerical(q_config, ankle_type)
-    return J.T
+    J_m2j = compute_ankle_jacobian_numerical(q_config, ankle_type)
+    try:
+        return np.linalg.inv(J_m2j.T)
+    except np.linalg.LinAlgError:
+        return np.linalg.pinv(J_m2j.T)
 
 
 def compute_mass_matrix_ankle(q_config, ankle_type='left'):
-    """
-    计算脚踝关节的质量矩阵（电机空间）。
-    M = (J^{-T} M_end J^{-1}) 其中 M_end 为末端效应器的质量
-    
-    这里使用简化近似：通过数值积分关节速度到末端速度的映射。
-    """
-    J = compute_ankle_jacobian_numerical(q_config, ankle_type)
-    
-    # 假设脚掌质量为 0.5 kg （可根据实际模型修改）
-    m_foot = 0.5
-    # 假设惯性张量为球形（简化）
-    I_foot = m_foot * 0.001 * np.eye(3)
-    
-    # 质量矩阵在末端坐标系
-    M_end = np.eye(6)
-    M_end[0:3, 0:3] = m_foot * np.eye(3)
-    M_end[3:6, 3:6] = I_foot
-    
-    # 映射到电机空间（简化：只考虑线性项）
-    J_pos = J[0:3, :]
-    try:
-        M_motor = np.linalg.inv(J_pos).T @ m_foot * np.eye(3) @ np.linalg.inv(J_pos)
-    except np.linalg.LinAlgError:
-        M_motor = np.eye(2)
-    
-    return M_motor
+    J_m2j = compute_ankle_jacobian_numerical(q_config, ankle_type)
+    pin.computeAllTerms(model, data, q_config, np.zeros(model.nv))
+    M_full = data.M.copy()
+
+    if ankle_type == 'left':
+        pitch_v_idx = model.joints[model.getJointId("anklePitch_Left")].idx_v
+        roll_v_idx = model.joints[model.getJointId("ankleRoll_Left")].idx_v
+    else:
+        pitch_v_idx = model.joints[model.getJointId("anklePitch_Right")].idx_v
+        roll_v_idx = model.joints[model.getJointId("ankleRoll_Right")].idx_v
+
+    idx = [pitch_v_idx, roll_v_idx]
+    M_joint = M_full[np.ix_(idx, idx)]
+    return J_m2j.T @ M_joint @ J_m2j
 
 
 def compute_coriolis_gravity(q_config, qd_config, ankle_type='left'):
-    """
-    计算科氏力和重力补偿力矩（在电机空间）。
-    
-    参数:
-        q_config:     配置向量
-        qd_config:    速度向量
-        ankle_type:   'left' 或 'right'
-    
-    返回:
-        c_g: 科氏力和重力补偿扭矩 (2,)
-    """
     if ankle_type == 'left':
         pitch_id = model.getJointId("anklePitch_Left")
         roll_id = model.getJointId("ankleRoll_Left")
-    else:
-        pitch_id = model.getJointId("anklePitch_Right")
-        roll_id = model.getJointId("ankleRoll_Right")
-    
-    pitch_q_idx = model.joints[pitch_id].idx_q
-    roll_q_idx = model.joints[roll_id].idx_q
-    
-    # 计算重力补偿通过数值微分重力势能
-    tau_gravity = np.zeros(2)
-    delta = 1e-7
-    
-    # pitch 方向的重力
-    q_plus = q_config.copy()
-    q_plus[pitch_q_idx] += delta
-    pin.computeAllTerms(model, data, q_plus, np.zeros(model.nv))
-    U_plus = pin.computePotentialEnergy(model, data)
-    
-    q_minus = q_config.copy()
-    q_minus[pitch_q_idx] -= delta
-    pin.computeAllTerms(model, data, q_minus, np.zeros(model.nv))
-    U_minus = pin.computePotentialEnergy(model, data)
-    
-    tau_gravity[0] = -(U_plus - U_minus) / (2 * delta)
-    
-    # roll 方向的重力
-    q_plus = q_config.copy()
-    q_plus[roll_q_idx] += delta
-    pin.computeAllTerms(model, data, q_plus, np.zeros(model.nv))
-    U_plus = pin.computePotentialEnergy(model, data)
-    
-    q_minus = q_config.copy()
-    q_minus[roll_q_idx] -= delta
-    pin.computeAllTerms(model, data, q_minus, np.zeros(model.nv))
-    U_minus = pin.computePotentialEnergy(model, data)
-    
-    tau_gravity[1] = -(U_plus - U_minus) / (2 * delta)
-    
-    return tau_gravity
-
-
-def compute_inverse_dynamics_ankle(q_config, qd_config, qdd_config, ankle_type='left'):
-    """
-    计算脚踝的逆动力学（电机空间）。
-    τ = M * qdd + c_g
-    
-    参数:
-        q_config:     配置向量
-        qd_config:    速度向量
-        qdd_config:   加速度向量
-        ankle_type:   'left' 或 'right'
-    
-    返回:
-        tau: 电机扭矩 (2,)
-    """
-    M = compute_mass_matrix_ankle(q_config, ankle_type)
-    c_g = compute_coriolis_gravity(q_config, qd_config, ankle_type)
-    
-    if ankle_type == 'left':
         motor_id_1 = model.getJointId("ankleMotor_Left_1")
         motor_id_2 = model.getJointId("ankleMotor_Left_2")
     else:
+        pitch_id = model.getJointId("anklePitch_Right")
+        roll_id = model.getJointId("ankleRoll_Right")
         motor_id_1 = model.getJointId("ankleMotor_Right_1")
         motor_id_2 = model.getJointId("ankleMotor_Right_2")
-    
+
+    qd_local = qd_config.copy()
     motor_v_1_idx = model.joints[motor_id_1].idx_v
     motor_v_2_idx = model.joints[motor_id_2].idx_v
-    
-    motor_qdd = np.array([qdd_config[motor_v_1_idx],
-                          qdd_config[motor_v_2_idx]])
-    
-    tau = M @ motor_qdd + c_g
-    
-    return tau
+    pitch_v_idx = model.joints[pitch_id].idx_v
+    roll_v_idx = model.joints[roll_id].idx_v
+
+    J_m2j = compute_ankle_jacobian_numerical(q_config, ankle_type)
+    motor_qd = np.array([qd_local[motor_v_1_idx], qd_local[motor_v_2_idx]])
+    joint_qd = J_m2j @ motor_qd
+    qd_local[pitch_v_idx] = joint_qd[0]
+    qd_local[roll_v_idx] = joint_qd[1]
+
+    pin.computeAllTerms(model, data, q_config, qd_local)
+    tau_joint = np.array([data.nle[pitch_v_idx], data.nle[roll_v_idx]])
+    return J_m2j.T @ tau_joint
+
+
+def compute_inverse_dynamics_ankle(q_config, qd_config, qdd_config, ankle_type='left'):
+    M = compute_mass_matrix_ankle(q_config, ankle_type)
+    c_g = compute_coriolis_gravity(q_config, qd_config, ankle_type)
+
+    if ankle_type == 'left':
+        pitch_v_idx = model.joints[model.getJointId("anklePitch_Left")].idx_v
+        roll_v_idx = model.joints[model.getJointId("ankleRoll_Left")].idx_v
+    else:
+        pitch_v_idx = model.joints[model.getJointId("anklePitch_Right")].idx_v
+        roll_v_idx = model.joints[model.getJointId("ankleRoll_Right")].idx_v
+
+    joint_qdd = np.array([qdd_config[pitch_v_idx], qdd_config[roll_v_idx]])
+    J_m2j = compute_ankle_jacobian_numerical(q_config, ankle_type)
+    try:
+        motor_qdd = np.linalg.solve(J_m2j, joint_qdd)
+    except np.linalg.LinAlgError:
+        motor_qdd = np.linalg.lstsq(J_m2j, joint_qdd, rcond=None)[0]
+
+    return M @ motor_qdd + c_g
 
 
 def print_ankle_dynamics(q_config, qd_config, ankle_type='left'):
@@ -424,9 +340,9 @@ def print_ankle_dynamics(q_config, qd_config, ankle_type='left'):
     
     # 雅可比矩阵
     J = compute_ankle_jacobian_numerical(q_config, ankle_type)
-    print(f"\n雅可比矩阵 J (位置分量，6x2):")
+    print(f"\n雅可比矩阵 J_m2j (d[pitch,roll]/d[motor1,motor2]):")
     print(f"{J}")
-    print(f"条件数 cond(J_pos) = {np.linalg.cond(J[0:3, :]):.4f}")
+    print(f"条件数 cond(J_m2j) = {np.linalg.cond(J):.4f}")
     
     # 质量矩阵
     M = compute_mass_matrix_ankle(q_config, ankle_type)
@@ -523,12 +439,14 @@ time.sleep(1.0)
 print("\n=== 正运动学演示 ===")
 print("电机转动 → 约束求解 → 脚掌跟随运动\n")
 
-for i, motor_angle in enumerate(np.linspace(-0.5, 0.5, 10)):
-    q_test = solve_parallel_fk(q,
+q_demo = q.copy()
+for i, motor_angle in enumerate(np.linspace(-0.3, 0.3, 10)):
+    q_test = solve_parallel_fk(q_demo,
                                motor1_left= motor_angle,
                                motor2_left=-motor_angle,
                                motor1_right= motor_angle,
                                motor2_right=-motor_angle)
+    q_demo = q_test.copy()
     display_with_tendons(q_test)
 
     print(f"步骤 {i+1:2d}:  Motor1={motor_angle:+.3f}  Motor2={-motor_angle:+.3f}"
@@ -550,13 +468,15 @@ desired_poses = [
     ( 0.0,  -0.15),  # 向右倾
 ]
 
+q_ik_seed = q.copy()
 for i, (pitch, roll) in enumerate(desired_poses):
-    motor_angles = inverse_kinematics_ankle(pitch, roll)
-    q_ik = solve_parallel_fk(q,
+    motor_angles = inverse_kinematics_ankle(pitch, roll, ankle_type='left', q_seed=q_ik_seed)
+    q_ik = solve_parallel_fk(q_ik_seed,
                              motor1_left=motor_angles[0],
                              motor2_left=motor_angles[1],
                              motor1_right=motor_angles[0],
                              motor2_right=motor_angles[1])
+    q_ik_seed = q_ik.copy()
     display_with_tendons(q_ik)
 
     print(f"步骤 {i+1}: 期望 Pitch={pitch:+.3f} Roll={roll:+.3f}  "
@@ -609,8 +529,7 @@ for motor_angle in motor_angles_range:
     
     # 计算雅可比条件数（反映灵活性）
     J = compute_ankle_jacobian_numerical(q_test, ankle_type='left')
-    J_pos = J[0:3, :]
-    cond_num = np.linalg.cond(J_pos)
+    cond_num = np.linalg.cond(J)
     
     # 计算质量矩阵特征值（反映加速性能）
     M = compute_mass_matrix_ankle(q_test, ankle_type='left')

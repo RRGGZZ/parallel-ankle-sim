@@ -33,9 +33,8 @@ from pndbotics_ankle import CustomAnkleKinematics
 # ══════════════════════════════════════════════════════════════════════
 I_MOTOR = 0.0549        # kg·m²  Motor rotor inertia (single motor)
 
-rad2deg = 180.0 / np.pi
-ROLL_RANGE_DEG  = (-0.35 * rad2deg, 0.35 * rad2deg)   # Roll  limits ±0.35 rad (±20°)
-PITCH_RANGE_DEG = (-1.0  * rad2deg, 0.35 * rad2deg)   # Pitch limits -1~+0.35 rad (-57.3°~+20°)
+ROLL_RANGE_RAD  = (-0.35, 0.35)
+PITCH_RANGE_RAD = (-1.0, 0.35)
 N_SCAN = 120                  # Number of scan points
 
 
@@ -46,9 +45,8 @@ N_SCAN = 120                  # Number of scan points
 # ══════════════════════════════════════════════════════════════════════
 I_MOTOR = 0.0549        # kg·m²  电机转子惯量（单个电机）
 
-rad2deg = 180.0 / np.pi
-ROLL_RANGE_DEG  = (-0.35 * rad2deg, 0.35 * rad2deg)   # Roll  机械限位 ±0.35 rad (±20°)
-PITCH_RANGE_DEG = (-1.0  * rad2deg, 0.35 * rad2deg)   # Pitch 机械限位 -1~+0.35 rad (-57.3°~+20°)
+ROLL_RANGE_RAD  = (-0.35, 0.35)
+PITCH_RANGE_RAD = (-1.0, 0.35)
 N_SCAN = 120                  # 扫描点数
 
 
@@ -225,8 +223,8 @@ def scan_armature_2d(robot, I_motor, roll_range_rad, pitch_range_rad, n):
 if __name__ == "__main__":
     robot = CustomAnkleKinematics()
 
-    roll_rad  = tuple(np.radians(ROLL_RANGE_DEG))
-    pitch_rad = tuple(np.radians(PITCH_RANGE_DEG))
+    roll_rad = ROLL_RANGE_RAD
+    pitch_rad = PITCH_RANGE_RAD
 
     # ── 零位详细分析 ──────────────────────────────────────────────────
     q1h, q2h = robot.IK(0.0, 0.0)

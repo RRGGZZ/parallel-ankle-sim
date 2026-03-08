@@ -48,8 +48,8 @@ def plot_analysis():
                 continue
 
             data['task'].append(val)
-            data['q1'].append(np.degrees(math.remainder(q1 - q1_home, 2*math.pi)))
-            data['q2'].append(np.degrees(math.remainder(q2 - q2_home, 2*math.pi)))
+            data['q1'].append(math.remainder(q1 - q1_home, 2 * math.pi))
+            data['q2'].append(math.remainder(q2 - q2_home, 2 * math.pi))
 
             vel_target = np.array([1.0, 0.0]) if sweep_type == 'roll' else np.array([0.0, 1.0])
             dq = J_vel @ vel_target
@@ -73,7 +73,7 @@ def plot_analysis():
     axs[0, 0].plot(data_roll['task'], data_roll['q1'], label='Motor 1 (Left)')
     axs[0, 0].plot(data_roll['task'], data_roll['q2'], label='Motor 2 (Right)')
     axs[0, 0].set_title('Angle Mapping  (Pitch = 0)')
-    axs[0, 0].set_ylabel('Motor Angle Change (deg)')
+    axs[0, 0].set_ylabel('Motor Angle Change (rad)')
     axs[0, 0].legend()
 
     axs[1, 0].plot(data_roll['task'], data_roll['dq1'], label='Motor 1')
@@ -92,7 +92,7 @@ def plot_analysis():
     axs[0, 1].plot(data_pitch['task'], data_pitch['q1'], label='Motor 1')
     axs[0, 1].plot(data_pitch['task'], data_pitch['q2'], label='Motor 2')
     axs[0, 1].set_title('Angle Mapping  (Roll = 0)')
-    axs[0, 1].set_ylabel('Motor Angle Change (deg)')
+    axs[0, 1].set_ylabel('Motor Angle Change (rad)')
     axs[0, 1].legend()
 
     axs[1, 1].plot(data_pitch['task'], data_pitch['dq1'], label='Motor 1')

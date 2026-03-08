@@ -87,7 +87,7 @@ def main():
     def update(tx, ty):
         q1, q2 = robot.IK(tx, ty)
         if q1 is None:
-            status_text.set_text(f"[!] UNREACHABLE POS\nRoll={np.degrees(tx):.1f}°\nPitch={np.degrees(ty):.1f}°")
+            status_text.set_text(f"[!] UNREACHABLE POS\nRoll={tx:+.3f} rad\nPitch={ty:+.3f} rad")
             status_text.set_color('red')
             # 如果不可达，将面变成红色警告
             pedal_poly.set_facecolors('#FF0000') 
@@ -117,8 +117,8 @@ def main():
 
         status_text.set_color('black')
         status_text.set_text(
-            f"Roll = {np.degrees(tx):+05.1f}° | Pitch = {np.degrees(ty):+05.1f}°\n"
-            f"q1   = {np.degrees(q1):+06.2f}° | q2    = {np.degrees(q2):+06.2f}°\n"
+            f"Roll = {tx:+.3f} rad | Pitch = {ty:+.3f} rad\n"
+            f"q1   = {q1:+.4f} rad | q2    = {q2:+.4f} rad\n"
         )
         fig.canvas.draw_idle()
 

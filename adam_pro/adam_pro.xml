@@ -92,15 +92,15 @@
                 <inertial pos="0 0 0" mass="0.35" diaginertia="0.0002 0.0002 0.0002" />
                 <joint name="ankleMotor_Left_1" pos="0 0 0" axis="0 1 0" range="-5 0.5" damping="6" armature="0.02" actuatorfrcrange="-40 40" />
                 <geom type="cylinder" fromto="0 -0.006 0 0 0.006 0" size="0.018" rgba="0.2 0.2 0.2 1" />
-                <geom type="capsule" fromto="0 0 0 -0.038683 0 0.01018" size="0.005" rgba="0.9 0.5 0.1 1" />
-                <site name="ankleLeft_B1" pos="-0.038683 0 0.01018" size="0.003" rgba="1 0.4 0.1 1" />
+                <geom type="capsule" fromto="0 0 0 -0.0349098 0 -0.0195271" size="0.005" rgba="0.9 0.5 0.1 1" />
+                <site name="ankleLeft_B1" pos="-0.0349098 0 -0.0195271" size="0.003" rgba="1 0.4 0.1 1" />
               </body>
               <body name="ankleMotorLeft_2" pos="-0.0003911 -0.0205 -0.167968">
                 <inertial pos="0 0 0" mass="0.35" diaginertia="0.0002 0.0002 0.0002" />
                 <joint name="ankleMotor_Left_2" pos="0 0 0" axis="0 1 0" range="-5 0.5" damping="6" armature="0.02" actuatorfrcrange="-40 40" />
                 <geom type="cylinder" fromto="0 -0.006 0 0 0.006 0" size="0.018" rgba="0.2 0.2 0.2 1" />
-                <geom type="capsule" fromto="0 0 0 -0.038966 0 0.009037" size="0.005" rgba="0.9 0.5 0.1 1" />
-                <site name="ankleLeft_B2" pos="-0.038966 0 0.009037" size="0.003" rgba="1 0.4 0.1 1" />
+                <geom type="capsule" fromto="0 0 0 -0.033676 0 -0.0215853" size="0.005" rgba="0.9 0.5 0.1 1" />
+                <site name="ankleLeft_B2" pos="-0.033676 0 -0.0215853" size="0.003" rgba="1 0.4 0.1 1" />
               </body>
               <body name="anklePitchLeft" pos="0 0 -0.37">
                 <inertial pos="0 0 0" mass="0.0301423" diaginertia="3.14e-06 3.14e-06 2.04e-06" />
@@ -113,8 +113,8 @@
                   <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.752941 0.752941 0.752941 1" mesh="toeLeft" />
                   <geom type="capsule" fromto="0 0 0 0.0371 0.0205 -0.015" size="0.004" rgba="0.1 0.8 1 0.8" />
                   <geom type="capsule" fromto="0 0 0 0.0371 -0.0205 -0.015" size="0.004" rgba="0.1 0.8 1 0.8" />
-<site name="ankleToeLeft_C1" pos="0.0293 0.0205 0.0137" size="0.003" rgba="0.1 0.8 1 1" />
-  <site name="ankleToeLeft_C2" pos="0.0044 -0.0205 0.0077" size="0.003" rgba="0.1 0.8 1 1" />
+                  <site name="ankleToeLeft_C1" pos="0.0371 0.0205 -0.015" size="0.003" rgba="0.1 0.8 1 1" />
+                  <site name="ankleToeLeft_C2" pos="0.0371 -0.0205 -0.015" size="0.003" rgba="0.1 0.8 1 1" />
                   <geom name="toe_left" size="0.12 0.05 0.01" pos="0.05 0 -0.055" type="box" rgba="1 0 0 0" />
                 </body>
               </body>
@@ -146,15 +146,15 @@
                 <inertial pos="0 0 0" mass="0.35" diaginertia="0.0002 0.0002 0.0002" />
                 <joint name="ankleMotor_Right_1" pos="0 0 0" axis="0 1 0" range="-3.2 0.5" damping="6" armature="0.02" actuatorfrcrange="-40 40" />
                 <geom type="cylinder" fromto="0 -0.006 0 0 0.006 0" size="0.018" rgba="0.2 0.2 0.2 1" />
-                <geom type="capsule" fromto="0 0 0 -0.038683 0 0.01018" size="0.005" rgba="0.9 0.5 0.1 1" />
-                <site name="ankleRight_B1" pos="-0.038683 0 0.01018" size="0.003" rgba="1 0.4 0.1 1" />
+                <geom type="capsule" fromto="0 0 0 -0.0349098 0 -0.0195271" size="0.005" rgba="0.9 0.5 0.1 1" />
+                <site name="ankleRight_B1" pos="-0.0349098 0 -0.0195271" size="0.003" rgba="1 0.4 0.1 1" />
               </body>
               <body name="ankleMotorRight_2" pos="-0.0003911 0.0205 -0.167968">
                 <inertial pos="0 0 0" mass="0.35" diaginertia="0.0002 0.0002 0.0002" />
                 <joint name="ankleMotor_Right_2" pos="0 0 0" axis="0 1 0" range="-3.2 0.5" damping="6" armature="0.02" actuatorfrcrange="-40 40" />
                 <geom type="cylinder" fromto="0 -0.006 0 0 0.006 0" size="0.018" rgba="0.2 0.2 0.2 1" />
-                <geom type="capsule" fromto="0 0 0 -0.038966 0 0.009037" size="0.005" rgba="0.9 0.5 0.1 1" />
-                <site name="ankleRight_B2" pos="-0.038966 0 0.009037" size="0.003" rgba="1 0.4 0.1 1" />
+                <geom type="capsule" fromto="0 0 0 -0.033676 0 -0.0215853" size="0.005" rgba="0.9 0.5 0.1 1" />
+                <site name="ankleRight_B2" pos="-0.033676 0 -0.0215853" size="0.003" rgba="1 0.4 0.1 1" />
               </body>
               <body name="anklePitchRight" pos="0 0 -0.37">
                 <inertial pos="0 0 0" mass="0.0301423" diaginertia="3.14e-06 3.14e-06 2.04e-06" />
@@ -167,8 +167,8 @@
                   <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.752941 0.752941 0.752941 1" mesh="toeRight" />
                   <geom type="capsule" fromto="0 0 0 0.0371 0.0205 -0.015" size="0.004" rgba="0.1 0.8 1 0.8" />
                   <geom type="capsule" fromto="0 0 0 0.0371 -0.0205 -0.015" size="0.004" rgba="0.1 0.8 1 0.8" />
-<site name="ankleToeRight_C1" pos="0.0293 -0.0205 0.0137" size="0.003" rgba="0.1 0.8 1 1" />
-  <site name="ankleToeRight_C2" pos="0.0110 0.0205 0.0093" size="0.003" rgba="0.1 0.8 1 1" />
+                  <site name="ankleToeRight_C1" pos="0.0371 -0.0205 -0.015" size="0.003" rgba="0.1 0.8 1 1" />
+                  <site name="ankleToeRight_C2" pos="0.0371 0.0205 -0.015" size="0.003" rgba="0.1 0.8 1 1" />
                   <geom name="toe_right" size="0.12 0.05 0.01" pos="0.05 0 -0.055" type="box" rgba="1 0 0 0" />
                 </body>
               </body>

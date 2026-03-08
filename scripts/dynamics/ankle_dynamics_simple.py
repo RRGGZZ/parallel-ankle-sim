@@ -126,8 +126,8 @@ def test_dynamics():
             M = compute_mass_matrix_full(ankle, roll, pitch)
             tau_g = compute_gravity_torque(ankle, roll, pitch)
             
-            print(f"\n--- {name} (pitch={pitch}, roll={roll}) ---")
-            print(f"  Motor angles: q1={np.degrees(q1):.2f}deg, q2={np.degrees(q2):.2f}deg")
+            print(f"\n--- {name} (pitch={pitch:+.4f} rad, roll={roll:+.4f} rad) ---")
+            print(f"  Motor angles: q1={q1:+.4f} rad, q2={q2:+.4f} rad")
             print(f"  J_vel:\\n    {J_vel}")
             print(f"  Mass matrix M:\\n    {M}")
             print(f"  Gravity torque: {tau_g}")

@@ -156,7 +156,7 @@ class CustomAnkleKinematics:
             if sv < 0:
                 raise ValueError(
                     f"Pose outside workspace (discriminant sv={sv:.2f} < 0), "
-                    f"Roll={np.degrees(theta_x):.1f}°, Pitch={np.degrees(theta_y):.1f}°"
+                    f"Roll={theta_x:.4f} rad, Pitch={theta_y:.4f} rad"
                 )
             
             q = math.atan2(K3, -math.sqrt(sv)) - math.atan2(K2, K1)

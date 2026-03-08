@@ -44,9 +44,9 @@ if __name__ == "__main__":
     print("\n--- 3. 边界拦截测试 ---")
     # [Bug3修复] 原测试用 (0.15, -0.2) 但该姿态实际在工作空间内，
     # 永远不会越界。且即使越界，原 IK 返回 None 也不抛 ValueError。
-    # 经扫描，工作空间边界约在 Roll+Pitch 组合超过 ~57°+52° 时触发。
-    limit_tx, limit_ty = 1.0, 0.9   # ~57° Roll + ~52° Pitch 组合极限
-    print(f"测试越界姿态: Roll={np.degrees(limit_tx):.0f}°, Pitch={np.degrees(limit_ty):.0f}°")
+    # 经扫描，工作空间边界约在 Roll+Pitch 组合超过约 1.0 + 0.9 rad 时触发。
+    limit_tx, limit_ty = 1.0, 0.9
+    print(f"测试越界姿态: Roll={limit_tx:.3f} rad, Pitch={limit_ty:.3f} rad")
     try:
         robot.IK(limit_tx, limit_ty)
         print("  未拦截")

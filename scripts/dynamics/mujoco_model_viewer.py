@@ -108,7 +108,9 @@ WORKSPACE_KEYFRAMES = np.array(
 
 
 def src_motor_to_raw(src_q: float, src_home: float, raw_home: float) -> float:
-    return raw_home - (src_q - src_home)
+    # Keep the mapped motor angle close to home representation to avoid 2*pi branch jumps.
+    delta = (raw_home - (src_q - src_home) + np.pi) % (2.0 * np.pi) - np.pi
+    return raw_home + delta
 
 
 def catmull_rom_closed(points: np.ndarray, phase: float) -> np.ndarray:
@@ -160,18 +162,39 @@ def set_joint_velocity(joint_id: int, value: float) -> None:
     data.qvel[joint_qvel_slice(joint_id)] = value
 
 
+def clip_to_joint_range(joint_id: int, value: float) -> float:
+    low, high = model.jnt_range[joint_id]
+    return float(np.clip(value, low, high))
+
+
 def apply_ankle_pose(roll: float, pitch: float, roll_rate: float, pitch_rate: float) -> None:
     data.ctrl[LEFT_1] = 0.0
     data.ctrl[LEFT_2] = 0.0
     data.ctrl[RIGHT_1] = 0.0
     data.ctrl[RIGHT_2] = 0.0
 
-    set_joint_position(LEFT_MOTOR_1_JOINT, q1_home_raw)
-    set_joint_position(LEFT_MOTOR_2_JOINT, q2_home_raw)
+    q1_src, q2_src = ankle_kin.IK(roll, pitch)
+    q1_raw = clip_to_joint_range(
+        LEFT_MOTOR_1_JOINT,
+        src_motor_to_raw(q1_src, q1_home_src, q1_home_raw),
+    )
+    q2_raw = clip_to_joint_range(
+        LEFT_MOTOR_2_JOINT,
+        src_motor_to_raw(q2_src, q2_home_src, q2_home_raw),
+    )
+
+    set_joint_position(LEFT_MOTOR_1_JOINT, q1_raw)
+    set_joint_position(LEFT_MOTOR_2_JOINT, q2_raw)
     set_joint_position(LEFT_PITCH_JOINT, pitch)
     set_joint_position(LEFT_ROLL_JOINT, roll)
-    set_joint_position(RIGHT_MOTOR_1_JOINT, q1_home_raw)
-    set_joint_position(RIGHT_MOTOR_2_JOINT, q2_home_raw)
+    set_joint_position(
+        RIGHT_MOTOR_1_JOINT,
+        clip_to_joint_range(RIGHT_MOTOR_1_JOINT, q1_raw),
+    )
+    set_joint_position(
+        RIGHT_MOTOR_2_JOINT,
+        clip_to_joint_range(RIGHT_MOTOR_2_JOINT, q2_raw),
+    )
     set_joint_position(RIGHT_PITCH_JOINT, pitch)
     set_joint_position(RIGHT_ROLL_JOINT, roll)
 

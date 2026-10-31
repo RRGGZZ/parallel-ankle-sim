@@ -1,188 +1,145 @@
+﻿"""Directional output-shaft T-N and joint envelopes from the canonical profile.
+
+The source workbook reference diagram distinguishes driving and braking. Rated
+current is a cap intersecting that diagram, not a second measured thermal curve.
 """
-Motor Speed-Torque Curve Mapping to Joint Space
-==============================================
+from __future__ import annotations
 
-Maps motor speed-torque characteristics to joint space capabilities
-for the parallel ankle mechanism.
-
-Usage:
-    python scripts/kinematics/ankle_speed_torque.py
-"""
-
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-
-# Use non-interactive backend for headless environments
-import matplotlib
-matplotlib.use('Agg')
-
-import numpy as np
+import argparse
 import math
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
+from pathlib import Path
+import sys
 
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "src"))
+import numpy as np
 from pndbotics_ankle import CustomAnkleKinematics
+from pndbotics_ankle.motor import DEFAULT_MOTOR
 
-
-# ── Motor Parameters (from motor datasheet) ────────────────────────────
-TAU_PEAK       = 46.0   # Nm  Peak torque
-TAU_CONT       = 18.0   # Nm  Continuous torque
-RPM_CORNER     = 55.0   # RPM Corner speed
-RPM_MAX        = 80.0   # RPM Maximum speed
+# Compatibility aliases; no independent numerical parameters live here.
+TAU_PEAK = DEFAULT_MOTOR.drive_torque
+TAU_CONT = DEFAULT_MOTOR.rated_torque
+RPM_CORNER = DEFAULT_MOTOR.corner_rpm
+RPM_MAX = DEFAULT_MOTOR.no_load_rpm
+W_CORNER = DEFAULT_MOTOR.corner_speed
+W_MAX = DEFAULT_MOTOR.no_load_speed
 
 
 def rpm2rads(rpm: float) -> float:
-    """Convert RPM to rad/s."""
-    return rpm * 2 * math.pi / 60
+    return rpm*math.tau/60
 
 
-W_CORNER = rpm2rads(RPM_CORNER)   # ≈ 5.76 rad/s
-W_MAX    = rpm2rads(RPM_MAX)       # ≈ 8.38 rad/s
+def _mode_from_flat(tau_flat):
+    if tau_flat is None or math.isclose(tau_flat, TAU_PEAK):
+        return "current_limit"
+    if math.isclose(tau_flat, TAU_CONT):
+        return "continuous"
+    raise ValueError("tau_flat must be a limit derived from the selected motor profile")
 
 
-def motor_torque_limit(omega: float, tau_flat: float) -> float:
+def motor_torque_limit(omega: float, tau_flat: float | None = None) -> float:
+    """Legacy helper: non-negative *driving* bound, not a symmetric brake cap."""
+    return DEFAULT_MOTOR.drive_limit(omega, _mode_from_flat(tau_flat))
+
+
+def joint_torque_bounds(J_vel, J_tau, axis: int, joint_speed: float, *, mode="continuous", spec=DEFAULT_MOTOR):
+    """Intersect both signed motor inequalities for a pure joint-axis torque.
+
+    For each motor, speed=J_vel[i,axis]*joint_speed and
+    torque=J_tau[i,axis]*joint_torque. The signs decide driving vs braking;
+    an absolute-speed-only available-torque formula loses this distinction.
+    Analytical crank and XML coordinates reverse BOTH speed and torque, so
+    this centrally symmetric four-quadrant envelope is invariant to that map.
     """
-    Compute maximum motor torque at given speed using linear speed-torque model.
-    
-    Parameters
-    ----------
-    omega : float
-        Motor angular velocity (rad/s)
-    tau_flat : float
-        Maximum torque at low speed (Nm)
-    
-    Returns
-    -------
-    float
-        Available torque at given speed (Nm)
-    """
-    omega = abs(omega)
-    if omega <= W_CORNER:
-        return tau_flat
-    elif omega <= W_MAX:
-        return tau_flat * (W_MAX - omega) / (W_MAX - W_CORNER)
-    else:
-        return 0.0
+    velocity = np.asarray(J_vel, dtype=float)
+    torque = np.asarray(J_tau, dtype=float)
+    if axis not in (0, 1) or velocity.shape != (2, 2) or torque.shape != (2, 2):
+        raise ValueError("Expect two 2x2 Jacobians and axis 0 or 1")
+    if not np.isfinite(velocity).all() or not np.isfinite(torque).all() or not math.isfinite(joint_speed):
+        raise ValueError("Jacobians and speed must be finite")
+    lower, upper = -math.inf, math.inf
+    for i in range(2):
+        gain = torque[i, axis]
+        lo, hi = spec.torque_bounds(float(velocity[i, axis]*joint_speed), mode)
+        if abs(gain) < 1e-12:
+            continue
+        limits = sorted((lo/gain, hi/gain))
+        lower, upper = max(lower, limits[0]), min(upper, limits[1])
+    if not math.isfinite(lower) or not math.isfinite(upper) or lower > upper:
+        raise ValueError("No finite joint-torque interval")
+    return lower, upper
 
 
-# ── Map motor speed-torque curve to joint space ───────────────────────
-def joint_speed_torque_curve(J_vel, J_tau, axis: int, tau_flat: float, n_pts=300):
-    """
-    Compute the joint speed-torque envelope from motor limits and Jacobians.
-
-    axis: 0 = roll (tx), 1 = pitch (ty)
-    Returns: (omega_joint_array, tau_joint_array)
-
-    Derivation:
-      For joint-speed direction `e_axis = [1, 0]` or `[0, 1]`:
-        `q_dot = J_vel @ (omega_j * e_axis)` -> motor speed scales with `omega_j`.
-      For joint-torque direction `e_axis`:
-        `tau_motor = J_tau @ (tau_j * e_axis)` -> motor torque scales with `tau_j`.
-      At a given `omega_j`, each motor has an available torque `tau_avail_i(omega_j)`.
-      Joint torque is limited by:
-        tau_j = min_i [ tau_avail_i(q_dot_i) / |J_tau[i, axis]| ]
-    """
-    e = np.zeros(2); e[axis] = 1.0
-
-    # Per-motor speed gain (i-th row of J_vel projected onto e_axis).
-    k_vel = J_vel @ e          # shape (2,)
-
-    # Per-motor torque gain (i-th row of J_tau projected onto e_axis).
-    k_tau = J_tau @ e          # shape (2,)
-
-    # Maximum joint speed when all motors respect `W_MAX`.
-    # |k_vel_i| * omega_j <= W_MAX → omega_j <= W_MAX / |k_vel_i|
-    omega_j_max = min(W_MAX / abs(k) for k in k_vel if abs(k) > 1e-9)
-
-    omega_arr = np.linspace(0, omega_j_max, n_pts)
-    tau_arr   = np.zeros(n_pts)
-
-    for idx, omega_j in enumerate(omega_arr):
-        tau_j_limit = np.inf
-        for i in range(2):
-            q_dot_i = k_vel[i] * omega_j
-            tau_avail_i = motor_torque_limit(q_dot_i, tau_flat)
-            if abs(k_tau[i]) > 1e-9:
-                tau_j_limit = min(tau_j_limit, tau_avail_i / abs(k_tau[i]))
-        tau_arr[idx] = tau_j_limit if np.isfinite(tau_j_limit) else 0.0
-
-    return omega_arr, tau_arr
+def joint_speed_torque_curve(J_vel, J_tau, axis: int, tau_flat=None, n_pts=300, *, mode=None, spec=DEFAULT_MOTOR):
+    """Positive joint-speed/driving-torque curve; keep the former call shape."""
+    if not isinstance(n_pts, int) or n_pts < 2:
+        raise ValueError("n_pts must be an integer >= 2")
+    selected = _mode_from_flat(tau_flat) if mode is None else mode
+    velocity_gains = np.asarray(J_vel, dtype=float)[:, axis]
+    candidates = [spec.no_load_speed/abs(gain) for gain in velocity_gains if abs(gain) > 1e-12]
+    if not candidates:
+        raise ValueError("No motor-speed transmission along the axis")
+    speed = np.linspace(0, min(candidates), n_pts)
+    torque = np.array([joint_torque_bounds(J_vel, J_tau, axis, float(w), mode=selected, spec=spec)[1] for w in speed])
+    return speed, torque
 
 
-# ── Main routine ─────────────────────────────────────────────────────
-robot = CustomAnkleKinematics()
-q1_home, q2_home = robot.IK(0.0, 0.0)
-J_vel, J_tau = robot.calc_Jacobians(0.0, 0.0, q1=q1_home, q2=q2_home)
+def generate_plots(out: Path):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    out.mkdir(parents=True, exist_ok=True)
+    spec = DEFAULT_MOTOR
+    rpm = np.linspace(-190, 190, 761)
+    omega = rpm*math.tau/60
+    fig, ax = plt.subplots(figsize=(10, 5.8), layout="constrained")
+    colors = {"current_limit": "#de7c29", "continuous": "#2375b5"}
+    for mode in ("current_limit", "continuous"):
+        bounds = np.array([spec.torque_bounds(float(w), mode) for w in omega])
+        label = "Current-limit reference (44 Nm braking estimate)" if mode == "current_limit" else "Rated-current operating cap (16 Nm)"
+        ax.fill_between(rpm, bounds[:, 0], bounds[:, 1], color=colors[mode], alpha=.13)
+        ax.plot(rpm, bounds[:, 0], color=colors[mode], lw=1.8, label=label)
+        ax.plot(rpm, bounds[:, 1], color=colors[mode], lw=1.8)
+    ax.axhline(0, color="#333333", lw=.7)
+    ax.axvline(0, color="#333333", lw=.7)
+    for value in (-spec.corner_rpm, spec.corner_rpm):
+        ax.axvline(value, color="gray", ls="--", lw=.7)
+    for value in (-spec.no_load_rpm, spec.no_load_rpm):
+        ax.axvline(value, color="gray", ls=":", lw=.9)
+    ax.set(xlabel="Actual gearbox-output speed (rpm)", ylabel="Allowed output-shaft torque (N m)",
+           title=f"{spec.motor_model}: directional T-N reference envelope")
+    ax.grid(alpha=.2)
+    ax.legend(loc="upper right", fontsize=8)
+    fig.savefig(out/"motor_tn_envelope.png", dpi=170)
+    plt.close(fig)
+    kin = CustomAnkleKinematics()
+    velocity, torque = kin.calc_Jacobians(0, 0)
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5), layout="constrained")
+    for axis, ax in enumerate(axes):
+        speed, _ = joint_speed_torque_curve(velocity, torque, axis, mode="current_limit")
+        for mode in ("current_limit", "continuous"):
+            bounds = np.array([joint_torque_bounds(velocity, torque, axis, float(w), mode=mode) for w in speed])
+            ax.fill_between(speed, bounds[:, 0], bounds[:, 1], color=colors[mode], alpha=.12)
+            ax.plot(speed, bounds[:, 1], color=colors[mode], label=mode)
+            ax.plot(speed, bounds[:, 0], color=colors[mode], ls="--")
+        ax.set(title=("Roll" if axis == 0 else "Pitch")+" at home pose", xlabel="Joint speed (rad/s)", ylabel="Joint torque (N m)")
+        ax.grid(alpha=.2)
+        ax.legend(fontsize=8)
+    fig.suptitle("Both motor constraints intersected; dashed = joint braking torque")
+    fig.savefig(out/"ankle_joint_tn_envelope.png", dpi=170)
+    plt.close(fig)
+    print(f"Motor: {spec.motor_model}; {spec.rated_torque:g} Nm rated-current cap; {spec.drive_torque:g}/{spec.brake_torque:g} Nm drive/brake reference")
+    for axis, name in enumerate(("Roll", "Pitch")):
+        print(name, "home standstill current-limit bounds:", joint_torque_bounds(velocity, torque, axis, 0, mode="current_limit"))
+    return out/"motor_tn_envelope.png", out/"ankle_joint_tn_envelope.png"
 
-print(f"Home J_vel:\n{J_vel}")
-print(f"Home J_tau:\n{J_tau}")
 
-# Compute four curves (roll/pitch x peak/continuous).
-w_roll_peak,  tau_roll_peak  = joint_speed_torque_curve(J_vel, J_tau, axis=0, tau_flat=TAU_PEAK)
-w_roll_cont,  tau_roll_cont  = joint_speed_torque_curve(J_vel, J_tau, axis=0, tau_flat=TAU_CONT)
-w_pitch_peak, tau_pitch_peak = joint_speed_torque_curve(J_vel, J_tau, axis=1, tau_flat=TAU_PEAK)
-w_pitch_cont, tau_pitch_cont = joint_speed_torque_curve(J_vel, J_tau, axis=1, tau_flat=TAU_CONT)
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--out", type=Path, default=ROOT/"docs")
+    for path in generate_plots(parser.parse_args().out):
+        print("Saved", path)
 
-# ── Plotting ─────────────────────────────────────────────────────────
-plt.style.use('default')
-fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
-fig.patch.set_facecolor('white')
 
-COLORS = {'peak': '#e74c3c', 'cont': '#922b21'}
-
-titles = ['Ankle Roll Joint', 'Ankle Pitch Joint']
-datasets = [
-    (w_roll_peak,  tau_roll_peak,  w_roll_cont,  tau_roll_cont),
-    (w_pitch_peak, tau_pitch_peak, w_pitch_cont, tau_pitch_cont),
-]
-
-for ax, title, (wp, tp, wc, tc) in zip(axes, titles, datasets):
-    ax.set_facecolor('white')
-
-    ax.fill_between(wp, tp, alpha=0.30, color=COLORS['peak'], label='Limited Duty Region')
-    ax.fill_between(wc, tc, alpha=0.65, color=COLORS['cont'], label='Continuous Duty Region')
-
-    ax.plot(wp, tp, color=COLORS['peak'], lw=2.0, ls='--')
-    ax.plot(wc, tc, color=COLORS['cont'],  lw=2.0)
-
-    ax.annotate(f"{tp[0]:.1f} Nm", xy=(0, tp[0]), xytext=(8, tp[0]+0.5),
-                color=COLORS['peak'], fontsize=9, va='bottom')
-    ax.annotate(f"{tc[0]:.1f} Nm", xy=(0, tc[0]), xytext=(8, tc[0]+0.5),
-                color=COLORS['cont'], fontsize=9, va='bottom')
-    ax.annotate(f"{wp[-1]:.2f} rad/s", xy=(wp[-1], 0),
-                xytext=(wp[-1]-0.5, 1.5),
-                color=COLORS['peak'], fontsize=9)
-
-    ax.set_title(title, fontsize=13, fontweight='bold', pad=10)
-    ax.set_xlabel('Angular Velocity (rad/s)', fontsize=10)
-    ax.set_ylabel('Torque (Nm)', fontsize=10)
-    ax.tick_params(colors='black')
-    for spine in ax.spines.values():
-        spine.set_edgecolor('#cccccc')
-    ax.grid(True, color='#dddddd', linewidth=0.6)
-    ax.set_xlim(left=0)
-    ax.set_ylim(bottom=0)
-
-    ax.legend(fontsize=9, loc='upper right')
-
-fig.suptitle('PND-50-6F5S-30-P → Ankle Joint Speed–Torque Envelope\n'
-             '(via Parallel Mechanism Jacobian, Home Position)',
-             fontsize=12, fontweight='bold', y=1)
-
-plt.tight_layout()
-import os as _os
-_save_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'ankle_joint_speed_torque.png')
-plt.savefig(_save_path, dpi=150, bbox_inches='tight', facecolor=fig.get_facecolor())
-plt.show()
-print(f"Image saved to: {_save_path}")
-
-# ── Print key metrics ────────────────────────────────────────────────
-print("\n-- Joint capability summary (home pose) --")
-for name, wp, tp, wc, tc in [
-    ('Roll',  w_roll_peak,  tau_roll_peak,  w_roll_cont,  tau_roll_cont),
-    ('Pitch', w_pitch_peak, tau_pitch_peak, w_pitch_cont, tau_pitch_cont),
-]:
-    print(f"  {name}:")
-    print(f"    Peak  stall torque = {tp[0]:.2f} Nm,  max speed = {wp[-1]:.2f} rad/s")
-    print(f"    Cont. stall torque = {tc[0]:.2f} Nm,  max speed = {wc[-1]:.2f} rad/s")
+if __name__ == "__main__":
+    main()

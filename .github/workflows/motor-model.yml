@@ -1,0 +1,33 @@
+name: Motor model consistency
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  motor-model:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install optional simulator and test dependencies
+        run: python -m pip install -e ".[sim,test]"
+      - name: Check single-source MJCF cache
+        run: python scripts/configure_ankle_motor.py --check
+      - name: Run pure and native regression tests
+        run: python -m unittest discover -s tests -v
+      - name: Integrate a short motor-only smoke trajectory
+        run: python scripts/dynamics/ankle_motor_simulation.py --duration 3 --out artifacts/smoke
+      - name: Verify native torque and recorded state replay
+        run: python scripts/dynamics/verify_motor_model.py --results artifacts/smoke

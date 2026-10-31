@@ -39,7 +39,7 @@ The ankle pose is parameterized by:
 The rotation order used in the implementation is:
 
 \[
-R(t_x, t_y) = R_x(t_x) R_y(t_y)
+R(t_x, t_y) = R_y(t_y) R_x(t_x)
 \]
 
 and the explicit rotation matrix is:
@@ -238,32 +238,15 @@ J_{\tau} = (J_{vel}^T)^{-1}
 
 ## 7. Speed–Torque Mapping to Joint Space
 
-The script `scripts/kinematics/ankle_speed_torque.py` maps motor limits to ankle output capability.
+The [speed–torque script](../scripts/kinematics/ankle_speed_torque.py) uses the same [canonical motor profile](../src/pndbotics_ankle/data/pnd_50_52_30_p.json) as MuJoCo. The user-approved workbook row is **PND-50-52-30-P**: output-side inertia budget 0.0549 kg·m², rated-current cap 16 N·m, reference drive/brake bounds 40/44 N·m, and reference drive knee/zero at 100/160 rpm. The brake bound is a +10% estimate; X1 was reported at rated current, so the full-current reference knee is not a separately measured peak-torque point.
 
-The motor speed–torque curve is modeled as a piecewise linear envelope:
+Driving amplitude D is flat to X1 and decreases linearly to zero at X2. **It is not a symmetric torque cap:** for positive actual shaft speed the current-limit interval is `[-44, D(speed)]`; for negative speed it is `[-D(speed), 44]`. At standstill it is conservatively ±40. The default operating mode intersects this interval with ±16; it does not scale the whole curve. Beyond X2, same-direction drive is zero but opposite-direction braking remains. No mechanical hard speed clamp or regenerative-bus capability is claimed. Va=190 rpm is unidentified friction metadata, not the T–N zero.
 
-\[
-\tau_{motor}(\omega)=
-\begin{cases}
-\tau_{flat}, & |\omega| \le \omega_{corner} \\
-\tau_{flat} \dfrac{\omega_{max}-|\omega|}{\omega_{max}-\omega_{corner}}, & \omega_{corner}<|\omega|\le\omega_{max} \\
-0, & |\omega|>\omega_{max}
-\end{cases}
-\]
+For pure-axis joint motion/torque, compute each motor's signed speed and torque with the Jacobians, then intersect **both signed motor inequalities**. This preserves motoring versus braking when an individual motor's contribution changes direction. See the [complete motor contract](motor_model.md) for units, evidence, inertia allocation and limitations.
 
-Using the Jacobians:
+![Directional motor torque-speed envelope](motor_tn_envelope.png)
 
-\[
-\dot q_m = J_{vel} \, \dot q_j,
-\qquad
-\tau_m = J_{\tau} \, \tau_j
-\]
-
-the script computes, for a chosen output axis, the joint-speed / joint-torque boundary by enforcing that **both motors remain within their own speed and torque limits**.
-
-The generated figure is:
-
-![Joint speed torque envelope](./ankle_joint_speed_torque.png)
+![Joint drive and braking envelope](ankle_joint_tn_envelope.png)
 
 ---
 

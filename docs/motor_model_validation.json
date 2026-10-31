@@ -1,0 +1,221 @@
+{
+  "motor_profile": {
+    "motor_model": "PND-50-52-30-P",
+    "rotor_inertia": 6.1e-05,
+    "reducer_input_inertia": null,
+    "gear_ratio": 30.0,
+    "kt_output": 1.6,
+    "rated_current": 10.0,
+    "current_limit": 25.0,
+    "corner_rpm": 100.0,
+    "no_load_rpm": 160.0,
+    "brake_multiplier": 1.1,
+    "inertia_policy": "included_in_profile_total",
+    "source_workbook": "PND人形执行器物理参数_20251216.xlsx",
+    "source_sheet": "执行器物理参数",
+    "source_sha256": "401a1d96f77895c46ba5fa4dffff29da652253f1dc7ef87c62595933ef3a8740",
+    "profile_id": "pnd_50_52_30_p_row10_directional_v1",
+    "friction_activation_rpm": 190.0,
+    "input_inertia": 6.1e-05,
+    "output_inertia": 0.054900000000000004,
+    "drive_torque": 40.0,
+    "brake_torque": 44.0,
+    "rated_torque": 16.0,
+    "corner_speed": 10.471975511965976,
+    "no_load_speed": 16.755160819145562,
+    "max_abs_torque": 44.0
+  },
+  "mujoco_version": "3.9.0",
+  "source_xml_sha256": "c546d264f8c9398ff7a36329526ee34cab70ed123b96de0a4f9cdb399a72938b",
+  "native_force_probes": {
+    "evaluated_motor_cases": 1800,
+    "max_generalized_torque_error_Nm": 0.0,
+    "motor_inertia_ledger": [
+      {
+        "name": "ankleMotor_Left_1",
+        "explicit_body_inertia": 0.0002,
+        "hidden_armature": 0.054700000000000006,
+        "total_modeled_inertia": 0.054900000000000004,
+        "profile_output_inertia": 0.054900000000000004,
+        "policy": "included_in_profile_total"
+      },
+      {
+        "name": "ankleMotor_Left_2",
+        "explicit_body_inertia": 0.0002,
+        "hidden_armature": 0.054700000000000006,
+        "total_modeled_inertia": 0.054900000000000004,
+        "profile_output_inertia": 0.054900000000000004,
+        "policy": "included_in_profile_total"
+      },
+      {
+        "name": "ankleMotor_Right_1",
+        "explicit_body_inertia": 0.0002,
+        "hidden_armature": 0.054700000000000006,
+        "total_modeled_inertia": 0.054900000000000004,
+        "profile_output_inertia": 0.054900000000000004,
+        "policy": "included_in_profile_total"
+      },
+      {
+        "name": "ankleMotor_Right_2",
+        "explicit_body_inertia": 0.0002,
+        "hidden_armature": 0.054700000000000006,
+        "total_modeled_inertia": 0.054900000000000004,
+        "profile_output_inertia": 0.054900000000000004,
+        "policy": "included_in_profile_total"
+      }
+    ],
+    "compiled_motor_mass_block_kg_m2": [
+      [
+        0.05490000000000002,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.05490000000000002,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.05490000000000002,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        0.05490000000000002
+      ]
+    ]
+  },
+  "trajectory": {
+    "samples": 28001,
+    "duration_s": 28.0,
+    "dt_s": 0.001,
+    "telemetry_sha256": "803070347dd49f5a8a2ca2e92d7556c33e22bb9922c6fd097194403662bd9dd5",
+    "all_samples_max_torque_error_Nm": 0.0,
+    "reconstructed_state_max_errors": {
+      "force": 0.0,
+      "acceleration": 0.0,
+      "tendon": 0.0,
+      "reflected_inertia": 0.0
+    },
+    "single_step_next_qpos_error_rad": 0.0,
+    "position_integration_residual_rad_s": 2.77416978278211e-14
+  },
+  "fine_trajectory": {
+    "samples": 56001,
+    "duration_s": 28.0,
+    "dt_s": 0.0005,
+    "telemetry_sha256": "c1e73984a4e2e28c8223ef8b212b88f3a912dcae07805d354c78ce6f7da76c1b",
+    "all_samples_max_torque_error_Nm": 0.0,
+    "reconstructed_state_max_errors": {
+      "force": 0.0,
+      "acceleration": 0.0,
+      "tendon": 0.0,
+      "reflected_inertia": 0.0
+    },
+    "single_step_next_qpos_error_rad": 0.0,
+    "position_integration_residual_rad_s": 5.551115123125783e-14
+  },
+  "step_refinement": {
+    "step_ratio": 2,
+    "max_position_difference_rad": 5.1885125953055056e-05,
+    "max_motor_torque_difference_Nm": 0.0064714898563192624,
+    "position_tolerance_rad": 0.001,
+    "torque_tolerance_Nm": 0.1
+  },
+  "original_workbook_unchanged": true,
+  "status": "PASS",
+  "unit_tests": {
+    "tests": 81,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "status": "PASS"
+  },
+  "motor_driven_simulation": {
+    "mode": "continuous",
+    "python_version": "3.13.0",
+    "numpy_version": "2.4.4",
+    "dt_s": 0.001,
+    "duration_s": 28.0,
+    "samples": 28001,
+    "motor_total_output_inertia_kg_m2": [
+      0.054900000000000004,
+      0.054900000000000004
+    ],
+    "motor_explicit_axis_inertia_kg_m2": [
+      0.0002,
+      0.0002
+    ],
+    "motor_additional_armature_kg_m2": [
+      0.054700000000000006,
+      0.054700000000000006
+    ],
+    "motor_compiled_mass_diagonal_kg_m2": [
+      0.054900000000000004,
+      0.054900000000000004
+    ],
+    "ankle_extra_armature_pitch_roll_kg_m2": [
+      0.0,
+      0.0
+    ],
+    "tracking_rmse_active_roll_pitch_deg": [
+      0.028824143045298505,
+      0.09923888367869195
+    ],
+    "tracking_max_abs_roll_pitch_deg": [
+      0.06620759632620234,
+      0.11410562949236086
+    ],
+    "motor_torque_abs_max_Nm": [
+      0.23054004621122506,
+      0.22884453265769278
+    ],
+    "motor_speed_abs_max_rad_s": [
+      0.5903950154516489,
+      0.5589512881435466
+    ],
+    "motor_power_abs_max_W": [
+      0.10446024950971591,
+      0.0989547296183782
+    ],
+    "saturated_samples": [
+      0,
+      0
+    ],
+    "max_applied_vs_limited_torque_error_Nm": 0.0,
+    "max_TN_violation_Nm": 0.0,
+    "tendon_length_max_abs_deviation_mm": [
+      0.004954405262824757,
+      0.005021233883739651
+    ]
+  },
+  "fine_tracking_rmse_roll_pitch_deg": [
+    0.029239830063960717,
+    0.09924711825420214
+  ],
+  "package_validation": {
+    "status": "PASS",
+    "wheel_sha256": "e32595b76e88f130d14416f5d69ef0e037853b3a6c8468e0378d6523a6a5fe8b",
+    "canonical_profile_included": true,
+    "runtime_included": true
+  },
+  "environment": {
+    "os": "Windows",
+    "python": "3.13.0",
+    "numpy": "2.4.4",
+    "mujoco": "3.9.0"
+  },
+  "scope": [
+    "software/reference-model agreement, not hardware calibration",
+    "force-grid speeds are imposed state probes, not speed tracking",
+    "dynamic trajectory is left ankle only, fixed shin, gravity on, no contact or external load",
+    "raw source XML digest is from local bytes; line endings may differ across platforms",
+    "original baseline video/archive are not validation evidence for this updated model"
+  ]
+}

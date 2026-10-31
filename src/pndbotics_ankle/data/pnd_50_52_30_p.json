@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "profile_id": "pnd_50_52_30_p_row10_directional_v1",
+  "motor_model": "PND-50-52-30-P",
+  "inertia_policy": "included_in_profile_total",
+  "parameters": {
+    "rotor_inertia": {"value": 0.61, "unit": "1e-4 kg*m^2", "source_cell": "F10", "evidence": "simulation, not a measured inertia"},
+    "reducer_input_inertia": {"value": null, "unit": "1e-4 kg*m^2", "source_cell": "E10", "evidence": "blank; counted as zero only in the workbook-equivalent model, not measured zero"},
+    "gear_ratio": {"value": 30, "unit": "1", "source_cell": "H10"},
+    "kt_output": {"value": 1.6, "unit": "N*m/A", "source_cell": "J10", "evidence": "test value at the actuator output"},
+    "rated_current": {"value": 10, "unit": "A", "source_cell": "K10"},
+    "current_limit": {"value": 25, "unit": "A", "source_cell": "L10"},
+    "brake_multiplier": {"value": 1.1, "unit": "1", "source_cell": "N1", "evidence": "estimated ten-percent difference, not an independent braking test"},
+    "corner_rpm": {"value": 100, "unit": "rpm", "source_cell": "O10", "evidence": "rated-current speed; the worksheet warns the speed falls at the current limit"},
+    "no_load_rpm": {"value": 160, "unit": "rpm", "source_cell": "Q10", "evidence": "test-bench no-load speed"}
+  },
+  "source": {
+    "workbook": "PND人形执行器物理参数_20251216.xlsx",
+    "sha256": "401a1d96f77895c46ba5fa4dffff29da652253f1dc7ef87c62595933ef3a8740",
+    "sheet": "执行器物理参数",
+    "row": 10,
+    "model_cell": "C10",
+    "formulas": {"G10": "=E10+F10", "I10": "=G10*H10*H10", "M10": "=J10*L10", "N10": "=M10*1.1"},
+    "formula_units": {"G10": "1e-4 kg*m^2", "I10": "1e-4 kg*m^2", "M10": "N*m", "N10": "N*m"},
+    "header_cells": {"rotor_evidence": "F1", "kt_evidence": "J1", "current_limit_source": "L1", "drive_derivation": "M1", "brake_estimate": "N1", "corner_caveat": "O1", "no_load_context": "Q1"},
+    "figure_definitions": {
+      "Y1": "peak torque with torque and speed in the same direction",
+      "Y2": "peak torque with torque and speed in opposite directions",
+      "X1": "maximum speed at full torque, idealized knee point",
+      "X2": "no-load speed test",
+      "Va": "velocity at which friction is fully activated; not a speed limit"
+    }
+  },
+  "metadata": {
+    "friction_activation_rpm": {"value": 190, "unit": "rpm", "source_cell": "U10", "context_cell": "U1", "context": "output unloaded, VESC no-load test; not the T-N endpoint"},
+    "static_friction": null,
+    "dynamic_friction": null,
+    "friction_cells": {"static": "S10", "dynamic": "T10"},
+    "peak_duration_s": null,
+    "thermal_conditions": null,
+    "current_convention": null,
+    "electrical_dynamics": null,
+    "regenerative_bus_limits": null,
+    "excluded_profile": "The attachment-2 ADAM Lite PNDrive current-to-torque scale belongs to a separate configuration and is not mixed into this profile."
+  },
+  "modeling_caveats": [
+    "The user selected this row and its embedded directional envelope as the simulation source of truth.",
+    "The output-equivalent inertia is derived once from input-side inertia and gear ratio. The MuJoCo coordinate is already the gearbox-output/crank angle: use transmission gear 1, not another factor of the physical gear ratio.",
+    "The default inertia policy includes existing explicit moving-body axial inertia in the output-shaft budget. Subtracting it to allocate armature is bookkeeping, not a measured hidden-rotor inertia. An external-extra policy must be selected explicitly.",
+    "The empty reducer inertia is unknown; treating its blank value as zero reproduces the supplied workbook, not a verified complete gearbox inertia.",
+    "The supplied knee is a rated-current speed. The idealized peak envelope is not a verified full-current torque-speed measurement at that knee.",
+    "Continuous mode means the rated-current torque cap intersected with the directional peak envelope. It is not a measured thermal capability curve or a guarantee of indefinite operation.",
+    "Braking capacity is an estimated output-torque envelope. Dividing every braking torque by the tested drive torque constant is not a validated phase-current model.",
+    "No friction, electrical, thermal, or regeneration dynamics are inferred from missing data. Friction-activation speed is metadata only.",
+    "Beyond the no-load speed, driving torque is zero and estimated braking remains available; this extrapolation is not an overspeed-safety guarantee. Velocity itself must not be clipped.",
+    "RPM is converted using exact 2*pi/60, not the worksheet's rounded 6.28/60 cached formulas."
+  ]
+}

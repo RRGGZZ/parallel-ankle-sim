@@ -13,10 +13,15 @@ import mujoco.viewer
 import numpy as np
 
 from pndbotics_ankle import CustomAnkleKinematics
+from pndbotics_ankle.mujoco_io import load_mujoco_model
+from pndbotics_ankle.mujoco_motor import MotorRuntime
+import atexit
 
 
 MODEL_PATH = PROJECT_ROOT / "adam_pro" / "adam_pro.xml"
-model = mujoco.MjModel.from_xml_path(str(MODEL_PATH))
+model = load_mujoco_model(MODEL_PATH)
+motor_runtime = MotorRuntime(model)
+atexit.register(motor_runtime.close)
 data = mujoco.MjData(model)
 ankle_kin = CustomAnkleKinematics()
 
@@ -212,7 +217,7 @@ def main() -> None:
     mujoco.mj_resetData(model, data)
     data.qpos[2] += BASE_HEIGHT_OFFSET
     data.ctrl[:] = 0.0
-    mujoco.mj_forward(model, data)
+    motor_runtime.forward(data)
 
     qpos_locked = data.qpos.copy()
     qvel_locked = np.zeros(model.nv)
@@ -245,7 +250,7 @@ def main() -> None:
             data.qpos[locked_qpos_mask] = qpos_locked[locked_qpos_mask]
             data.qvel[locked_qvel_mask] = qvel_locked[locked_qvel_mask]
             apply_ankle_pose(target_roll, target_pitch, roll_rate, pitch_rate)
-            mujoco.mj_forward(model, data)
+            motor_runtime.forward(data)
 
             viewer.sync()
 

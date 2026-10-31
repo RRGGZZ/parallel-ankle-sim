@@ -26,6 +26,9 @@ import mujoco
 import numpy as np
 
 from pndbotics_ankle import CustomAnkleKinematics
+from pndbotics_ankle.mujoco_io import load_mujoco_model
+from pndbotics_ankle.mujoco_motor import MotorRuntime
+import atexit
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -48,7 +51,9 @@ def wrap_to_pi(angle: float) -> float:
     return (angle + np.pi) % (2 * np.pi) - np.pi
 
 
-model = mujoco.MjModel.from_xml_path(str(MJCF_PATH))
+model = load_mujoco_model(MJCF_PATH)
+motor_runtime = MotorRuntime(model)
+atexit.register(motor_runtime.close)
 data = mujoco.MjData(model)
 model.opt.gravity[:] = 0.0
 
@@ -93,7 +98,7 @@ pitch_dof_right = dof_index("anklePitch_Right")
 roll_dof_right = dof_index("ankleRoll_Right")
 
 mujoco.mj_resetData(model, data)
-mujoco.mj_forward(model, data)
+motor_runtime.forward(data)
 
 L1 = np.linalg.norm(data.site_xpos[sid_B1] - data.site_xpos[sid_C1])
 L2 = np.linalg.norm(data.site_xpos[sid_B2] - data.site_xpos[sid_C2])
@@ -121,7 +126,7 @@ def reset_runtime() -> None:
     mujoco.mj_resetData(model, data)
     data.ctrl[:] = 0.0
     data.qfrc_applied[:] = 0.0
-    mujoco.mj_forward(model, data)
+    motor_runtime.forward(data)
 
 
 def read_left_state() -> dict[str, float]:
@@ -183,7 +188,7 @@ def simulate_to_pose(target_pitch: float, target_roll: float) -> dict[str, float
 
     for _ in range(SIM_STEPS):
         apply_ankle_pd(target_pitch, target_roll)
-        mujoco.mj_step(model, data)
+        motor_runtime.step(data)
         state = read_left_state()
         pitch_hist.append(state["pitch"])
         roll_hist.append(state["roll"])

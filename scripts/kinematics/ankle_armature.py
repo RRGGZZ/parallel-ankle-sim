@@ -26,12 +26,15 @@ import math
 import matplotlib.pyplot as plt
 
 from pndbotics_ankle import CustomAnkleKinematics
+from pndbotics_ankle.motor import DEFAULT_MOTOR
 
 
 # ══════════════════════════════════════════════════════════════════════
 # User Parameters
 # ══════════════════════════════════════════════════════════════════════
-I_MOTOR = 0.0549        # kg·m²  Motor rotor inertia (single motor)
+# Canonical total output-shaft budget, NOT the bare rotor and NOT the
+# additional MJCF armature alone (the latter excludes explicit body inertia).
+I_MOTOR = DEFAULT_MOTOR.output_inertia
 
 ROLL_RANGE_RAD  = (-0.35, 0.35)
 PITCH_RANGE_RAD = (-1.0, 0.35)
@@ -41,6 +44,21 @@ N_SCAN = 120                  # Number of scan points
 # ══════════════════════════════════════════════════════════════════════
 # Armature computation.
 # ══════════════════════════════════════════════════════════════════════
+def compute_reflected_inertia(J_vel: np.ndarray, motor_inertias):
+    """Full motor-only J.T diag(I) J, including the off-diagonal coupling.
+
+    Use the whole selected output-shaft budget once. This derived matrix must
+    not be added to passive ankle joints in the explicit-motor MuJoCo model.
+    """
+    jacobian = np.asarray(J_vel, dtype=float)
+    inertias = np.broadcast_to(np.asarray(motor_inertias, dtype=float), (2,))
+    if jacobian.shape != (2, 2) or not np.isfinite(jacobian).all():
+        raise ValueError("J_vel must be a finite 2x2 matrix")
+    if not np.isfinite(inertias).all() or np.any(inertias < 0):
+        raise ValueError("Motor inertias must be finite and nonnegative")
+    return jacobian.T @ np.diag(inertias) @ jacobian
+
+
 def compute_armature(J_vel: np.ndarray, I_motor: float, axis: int):
     """
     Compute reflected armature for one joint axis.
@@ -50,7 +68,7 @@ def compute_armature(J_vel: np.ndarray, I_motor: float, axis: int):
     J_vel : np.ndarray
         2x2 velocity Jacobian (`motor_speed = J_vel @ joint_speed`).
     I_motor : float
-        Rotor inertia of a single motor [kg*m^2].
+        Total single-motor output-shaft inertia budget [kg*m^2], not bare rotor inertia.
     axis : int
         0 for roll (tx), 1 for pitch (ty).
 
@@ -62,7 +80,7 @@ def compute_armature(J_vel: np.ndarray, I_motor: float, axis: int):
     e = np.zeros(2)
     e[axis] = 1.0
     k_vel = J_vel @ e                           # Speed transmission ratios.
-    I_arm = float(np.sum(k_vel**2) * I_motor)   # Σ k_i² × I_motor
+    I_arm = float(compute_reflected_inertia(J_vel, I_motor)[axis, axis])
     return k_vel, I_arm
 
 
@@ -111,9 +129,12 @@ if __name__ == "__main__":
     Jv_home = robot.calc_Jvel(0.0, 0.0, q1h, q2h)
 
     print("=" * 60)
-    print(f"  Motor rotor inertia I_motor = {I_MOTOR} kg*m^2")
+    print(f"  {DEFAULT_MOTOR.motor_model}: output-shaft budget = {I_MOTOR} kg*m^2")
+    print("  MJCF additional armature is budget minus explicit motor-body inertia.")
     print("=" * 60)
     print(f"\nHome J_vel =\n{np.round(Jv_home, 4)}\n")
+    print("Full home M_ref including coupling [kg*m^2]:")
+    print(compute_reflected_inertia(Jv_home, I_MOTOR))
 
     home_results = {}
     for axis, name in [(0, "Roll (tx)"), (1, "Pitch (ty)")]:
@@ -134,7 +155,7 @@ if __name__ == "__main__":
     cons_pitch = float(np.nanmax(ARM_PITCH))
 
     print("=" * 60)
-    print("  Conservative estimate (max over full motion range, recommended for simulators)")
+    print("  Axis-wise scan maxima (NOT a coupled PSD bound or extra MJCF armature)")
     print("=" * 60)
     print(f"  Roll  armature = {cons_roll:.5f} kg*m^2")
     print(f"  Pitch armature = {cons_pitch:.5f} kg*m^2")
@@ -190,9 +211,9 @@ if __name__ == "__main__":
         ax.view_init(elev=28, azim=-50)
 
     fig.suptitle(
-        f'Reflected Motor Inertia (Armature) — Parallel Ankle Mechanism  |  '
+        f'Output-shaft Motor Budget Reflected to the Ankle  |  '
         f'I_motor = {I_MOTOR} kg·m²\n'
-        f'Conservative:  Roll = {cons_roll*1e3:.1f}×10⁻³ kg·m²    '
+        f'Axis-wise maxima:  Roll = {cons_roll*1e3:.1f}×10⁻³ kg·m²    '
         f'Pitch = {cons_pitch*1e3:.1f}×10⁻³ kg·m²',
         fontsize=11, fontweight='bold',
     )

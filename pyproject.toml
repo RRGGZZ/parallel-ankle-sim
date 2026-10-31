@@ -34,6 +34,17 @@ viz = [
 docs = [
     "sphinx",
 ]
+sim = [
+    "mujoco>=3.9,<4",
+    "matplotlib>=3.8,<4",
+]
+test = [
+    "mujoco>=3.9,<4",
+    "matplotlib>=3.8,<4",
+]
+
+[tool.setuptools.package-data]
+pndbotics_ankle = ["data/*.json"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -2,6 +2,11 @@
 <mujoco model="adam_pro">
   <compiler angle="radian" meshdir="meshes_stl_0.25/" />
   <option timestep="0.001" integrator="implicitfast" iterations="80" tolerance="1e-8" />
+  <size nuser_actuator="8" nuserdata="4" />
+  <custom>
+    <text name="pnd_ankle_motor_model" data="PND-50-52-30-P" />
+    <text name="pnd_ankle_motor_inertia_policy" data="included_in_profile_total" />
+  </custom>
   <asset>
     <mesh name="pelvis" file="pelvis.STL" />
     <mesh name="hipPitchLeft" file="hipPitchLeft.STL" />
@@ -90,26 +95,26 @@
               <!-- 坐标基准：anklePitch 与 ankleRoll 交点为 O -->
               <body name="ankleMotorLeft_1" pos="0.0002427 0.0205 -0.094826">
                 <inertial pos="0 0 0" mass="0.35" diaginertia="0.0002 0.0002 0.0002" />
-                <joint name="ankleMotor_Left_1" pos="0 0 0" axis="0 1 0" range="-5 0.5" damping="6" armature="0.02" actuatorfrcrange="-40 40" />
+                <joint name="ankleMotor_Left_1" pos="0 0 0" axis="0 1 0" range="-5 0.5" damping="0" armature="0.054700000000000006" actuatorfrcrange="-44 44" frictionloss="0" actuatorfrclimited="true" />
                 <geom type="cylinder" fromto="0 -0.006 0 0 0.006 0" size="0.018" rgba="0.2 0.2 0.2 1" />
                 <geom type="capsule" fromto="0 0 0 -0.0349098 0 -0.0195271" size="0.005" rgba="0.9 0.5 0.1 1" />
                 <site name="ankleLeft_B1" pos="-0.0349098 0 -0.0195271" size="0.003" rgba="1 0.4 0.1 1" />
               </body>
               <body name="ankleMotorLeft_2" pos="-0.0003911 -0.0205 -0.167968">
                 <inertial pos="0 0 0" mass="0.35" diaginertia="0.0002 0.0002 0.0002" />
-                <joint name="ankleMotor_Left_2" pos="0 0 0" axis="0 1 0" range="-5 0.5" damping="6" armature="0.02" actuatorfrcrange="-40 40" />
+                <joint name="ankleMotor_Left_2" pos="0 0 0" axis="0 1 0" range="-5 0.5" damping="0" armature="0.054700000000000006" actuatorfrcrange="-44 44" frictionloss="0" actuatorfrclimited="true" />
                 <geom type="cylinder" fromto="0 -0.006 0 0 0.006 0" size="0.018" rgba="0.2 0.2 0.2 1" />
                 <geom type="capsule" fromto="0 0 0 -0.033676 0 -0.0215853" size="0.005" rgba="0.9 0.5 0.1 1" />
                 <site name="ankleLeft_B2" pos="-0.033676 0 -0.0215853" size="0.003" rgba="1 0.4 0.1 1" />
               </body>
               <body name="anklePitchLeft" pos="0 0 -0.37">
                 <inertial pos="0 0 0" mass="0.0301423" diaginertia="3.14e-06 3.14e-06 2.04e-06" />
-                <joint name="anklePitch_Left" pos="0 0 0" axis="0 1 0" range="-1 0.35" actuatorfrcrange="-40 40" />
+                <joint name="anklePitch_Left" pos="0 0 0" axis="0 1 0" range="-1 0.35" actuatorfrcrange="-40 40" armature="0" />
                 <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="1 1 1 1" mesh="anklePitchLeft" />
                 <!-- <geom type="mesh" rgba="1 1 1 1" mesh="anklePitchLeft" /> -->
                 <body name="toeLeft">
                   <inertial pos="0.0374997 -4.016e-05 -0.0419674" quat="-0.0209271 0.743591 -0.0168677 0.668094" mass="0.634796" diaginertia="0.00233488 0.00226889 0.000434699" />
-                  <joint name="ankleRoll_Left" pos="0 0 0" axis="1 0 0" range="-0.3491 0.3491" actuatorfrcrange="-12 12" />
+                  <joint name="ankleRoll_Left" pos="0 0 0" axis="1 0 0" range="-0.3491 0.3491" actuatorfrcrange="-12 12" armature="0" />
                   <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.752941 0.752941 0.752941 1" mesh="toeLeft" />
                   <geom type="capsule" fromto="0 0 0 0.0371 0.0205 -0.015" size="0.004" rgba="0.1 0.8 1 0.8" />
                   <geom type="capsule" fromto="0 0 0 0.0371 -0.0205 -0.015" size="0.004" rgba="0.1 0.8 1 0.8" />
@@ -144,26 +149,26 @@
               <!-- <geom type="mesh" rgba="0.752941 0.752941 0.752941 1" mesh="shinRight" /> -->
               <body name="ankleMotorRight_1" pos="0.0002427 -0.0205 -0.094826">
                 <inertial pos="0 0 0" mass="0.35" diaginertia="0.0002 0.0002 0.0002" />
-                <joint name="ankleMotor_Right_1" pos="0 0 0" axis="0 1 0" range="-3.2 0.5" damping="6" armature="0.02" actuatorfrcrange="-40 40" />
+                <joint name="ankleMotor_Right_1" pos="0 0 0" axis="0 1 0" range="-3.2 0.5" damping="0" armature="0.054700000000000006" actuatorfrcrange="-44 44" frictionloss="0" actuatorfrclimited="true" />
                 <geom type="cylinder" fromto="0 -0.006 0 0 0.006 0" size="0.018" rgba="0.2 0.2 0.2 1" />
                 <geom type="capsule" fromto="0 0 0 -0.0349098 0 -0.0195271" size="0.005" rgba="0.9 0.5 0.1 1" />
                 <site name="ankleRight_B1" pos="-0.0349098 0 -0.0195271" size="0.003" rgba="1 0.4 0.1 1" />
               </body>
               <body name="ankleMotorRight_2" pos="-0.0003911 0.0205 -0.167968">
                 <inertial pos="0 0 0" mass="0.35" diaginertia="0.0002 0.0002 0.0002" />
-                <joint name="ankleMotor_Right_2" pos="0 0 0" axis="0 1 0" range="-3.2 0.5" damping="6" armature="0.02" actuatorfrcrange="-40 40" />
+                <joint name="ankleMotor_Right_2" pos="0 0 0" axis="0 1 0" range="-3.2 0.5" damping="0" armature="0.054700000000000006" actuatorfrcrange="-44 44" frictionloss="0" actuatorfrclimited="true" />
                 <geom type="cylinder" fromto="0 -0.006 0 0 0.006 0" size="0.018" rgba="0.2 0.2 0.2 1" />
                 <geom type="capsule" fromto="0 0 0 -0.033676 0 -0.0215853" size="0.005" rgba="0.9 0.5 0.1 1" />
                 <site name="ankleRight_B2" pos="-0.033676 0 -0.0215853" size="0.003" rgba="1 0.4 0.1 1" />
               </body>
               <body name="anklePitchRight" pos="0 0 -0.37">
                 <inertial pos="0 0 0" mass="0.0301423" diaginertia="3.14e-06 3.14e-06 2.04e-06" />
-                <joint name="anklePitch_Right" pos="0 0 0" axis="0 1 0" range="-1 0.35" actuatorfrcrange="-40 40" />
+                <joint name="anklePitch_Right" pos="0 0 0" axis="0 1 0" range="-1 0.35" actuatorfrcrange="-40 40" armature="0" />
                 <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="1 1 1 1" mesh="anklePitchRight" />
                 <!-- <geom type="mesh" rgba="1 1 1 1" mesh="anklePitchRight" /> -->
                 <body name="toeRight">
                   <inertial pos="0.0375023 4.002e-05 -0.0419671" quat="0.0209768 0.743592 0.0169235 0.66809" mass="0.634808" diaginertia="0.00233489 0.00226889 0.000434726" />
-                  <joint name="ankleRoll_Right" pos="0 0 0" axis="1 0 0" range="-0.3491 0.3491" actuatorfrcrange="-12 12" />
+                  <joint name="ankleRoll_Right" pos="0 0 0" axis="1 0 0" range="-0.3491 0.3491" actuatorfrcrange="-12 12" armature="0" />
                   <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.752941 0.752941 0.752941 1" mesh="toeRight" />
                   <geom type="capsule" fromto="0 0 0 0.0371 0.0205 -0.015" size="0.004" rgba="0.1 0.8 1 0.8" />
                   <geom type="capsule" fromto="0 0 0 0.0371 -0.0205 -0.015" size="0.004" rgba="0.1 0.8 1 0.8" />
@@ -442,14 +447,14 @@
     <motor joint="hipRoll_Left" name="hipRoll_Left" ctrlrange="-160.0 160.0" />
     <motor joint="hipYaw_Left" name="hipYaw_Left" ctrlrange="-105.0 105.0" />
     <motor joint="kneePitch_Left" name="kneePitch_Left" ctrlrange="-230.0 230.0" />
-    <motor joint="ankleMotor_Left_1" name="ankleMotor_Left_1" ctrlrange="-40.0 40.0" />
-    <motor joint="ankleMotor_Left_2" name="ankleMotor_Left_2" ctrlrange="-40.0 40.0" />
+    <general joint="ankleMotor_Left_1" name="ankleMotor_Left_1" ctrlrange="-44 44" gear="1" ctrllimited="true" forcerange="-44 44" forcelimited="true" dyntype="none" gaintype="fixed" gainprm="0" biastype="user" biasprm="0 0 0" user="1347306573 1 40 44 16 10.471975511965976 16.755160819145562 0" />
+    <general joint="ankleMotor_Left_2" name="ankleMotor_Left_2" ctrlrange="-44 44" gear="1" ctrllimited="true" forcerange="-44 44" forcelimited="true" dyntype="none" gaintype="fixed" gainprm="0" biastype="user" biasprm="0 0 0" user="1347306573 1 40 44 16 10.471975511965976 16.755160819145562 1" />
     <motor joint="hipPitch_Right" name="hipPitch_Right" ctrlrange="-230.0 230.0" />
     <motor joint="hipRoll_Right" name="hipRoll_Right" ctrlrange="-160.0 160.0" />
     <motor joint="hipYaw_Right" name="hipYaw_Right" ctrlrange="-105.0 105.0" />
     <motor joint="kneePitch_Right" name="kneePitch_Right" ctrlrange="-230.0 230.0" />
-    <motor joint="ankleMotor_Right_1" name="ankleMotor_Right_1" ctrlrange="-40.0 40.0" />
-    <motor joint="ankleMotor_Right_2" name="ankleMotor_Right_2" ctrlrange="-40.0 40.0" />
+    <general joint="ankleMotor_Right_1" name="ankleMotor_Right_1" ctrlrange="-44 44" gear="1" ctrllimited="true" forcerange="-44 44" forcelimited="true" dyntype="none" gaintype="fixed" gainprm="0" biastype="user" biasprm="0 0 0" user="1347306573 1 40 44 16 10.471975511965976 16.755160819145562 2" />
+    <general joint="ankleMotor_Right_2" name="ankleMotor_Right_2" ctrlrange="-44 44" gear="1" ctrllimited="true" forcerange="-44 44" forcelimited="true" dyntype="none" gaintype="fixed" gainprm="0" biastype="user" biasprm="0 0 0" user="1347306573 1 40 44 16 10.471975511965976 16.755160819145562 3" />
     <motor joint="waistRoll" name="waistRoll" ctrlrange="-110.0 110.0" />
     <motor joint="waistPitch" name="waistPitch" ctrlrange="-110.0 110.0" />
     <motor joint="waistYaw" name="waistYaw" ctrlrange="-110.0 110.0" />

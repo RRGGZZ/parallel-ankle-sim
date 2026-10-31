@@ -15,6 +15,9 @@ import numpy as np
 __version__ = "1.0.0"
 __author__ = "PnDBotics Research Team"
 
+# The motor profile is pure Python; importing kinematics never requires MuJoCo.
+from .motor import MotorSpec, DEFAULT_MOTOR, load_motor_spec
+
 
 class CustomAnkleKinematics:
     """
@@ -36,7 +39,7 @@ class CustomAnkleKinematics:
     
     Example:
         >>> robot = CustomAnkleKinematics()
-        >>> q1, q2 = robot.IK(roll=0.1, pitch=0.05)
+        >>> q1, q2 = robot.IK(0.1, 0.05)
         >>> print(f"Motor angles: {q1:.3f}, {q2:.3f} rad")
     """
     
@@ -101,8 +104,8 @@ class CustomAnkleKinematics:
         
         Note
         ----
-        The rotation order is: first pitch (Y), then roll (X).
-        This corresponds to R = R_x(tx) @ R_y(ty)
+        Pitch-parent / roll-child convention, as in the MJCF hierarchy.
+        This corresponds to R = R_y(ty) @ R_x(tx)
         """
         cx, sx = np.cos(tx), np.sin(tx)
         cy, sy = np.cos(ty), np.sin(ty)

@@ -1,4 +1,4 @@
-﻿# 电机模型与 MuJoCo 一致性契约
+# 电机模型与 MuJoCo 一致性契约
 
 ## 1. 基准与证据等级
 
@@ -99,4 +99,4 @@ python scripts/dynamics/ankle_motor_simulation.py --out artifacts/motor_validati
 
 [电机驱动仿真](../scripts/dynamics/ankle_motor_simulation.py)固定近端小腿、启用重力、无地面接触/外载，保留原柔性 tendon。仅驱动两个电机，`qfrc_applied` 全为零。记录原始请求、动态上下界、限幅结果、实际广义扭矩、转速、功率、饱和及完整惯量分账。`mapped_joint_torque` 只是理想雅可比映射，不是已扣除电机/曲柄加速度及机构损耗的足端净扭矩。
 
-测试设计见[电机测试计划](specs/plant-models/ankle-motor/ankle-motor-test-plan.md)。实际验证数据会另行列出，不能把通过软件一致性测试写成实物电机已标定。
+逐步选参理由、参数释义、单位/轴侧核对、手算示例与操作顺序见[参数选取与建模步骤说明](ankle_motor_parameter_selection_guide.md)。测试设计见[电机测试计划](specs/plant-models/ankle-motor/ankle-motor-test-plan.md)，已执行结果见[验证报告](motor_model_validation.md)。通过软件一致性测试不等于实物电机已标定，也不等于完成了整机硬件选型。

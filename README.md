@@ -10,6 +10,8 @@ A parallel ankle mechanism simulation repository for academic research, featurin
 
 The four ankle motors now use one [canonical profile](src/pndbotics_ankle/data/pnd_50_52_30_p.json), approved against **row 10, PND-50-52-30-P**, in the user's motor-parameter workbook. Only the selected parameters and source digest are included; the private workbook and its other device data are **not redistributed**.
 
+**Why these parameters, how they were selected, and what each means:** see the [Chinese step-by-step selection and modeling guide](docs/ankle_motor_parameter_selection_guide.md). It separates source data, derived quantities, modeling choices and unknowns, works through inertia/T–N examples, and gives the implementation and acceptance sequence. This is parameterization of the user-designated motor, not a claim that full robot hardware sizing has been completed.
+
 | Quantity | Current model | Evidence / interpretation |
 |---|---:|---|
 | Rotor inertia | 0.61 × 10^-4 kg·m² | F10; explicitly labeled simulation data |

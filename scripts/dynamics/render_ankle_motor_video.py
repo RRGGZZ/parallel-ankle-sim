@@ -127,6 +127,9 @@ def monochrome_visuals(model):
             shade, alpha = .46, 1.
         elif body == "toeLeft":
             shade, alpha = .78, 1.
+        # Never reveal an originally hidden collision proxy (not a visual mesh).
+        if float(model.geom_rgba[gid, 3]) == 0.:
+            alpha = 0.
         model.geom_rgba[gid] = [shade, shade, shade, alpha]
     for i in range(model.nsite):
         body = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, int(model.site_bodyid[i])) or ""
@@ -156,6 +159,23 @@ def monochrome_visuals(model):
 
 
 class Film:
+    INPUT_MODE = "L"
+    STYLE_ID = "monochrome_v1"
+    PALETTE = "black-white-gray only"
+    VIDEO_NAME = VIDEO_NAME
+    RENDERER_FILE = Path(__file__)
+
+    def style_model(self, model):
+        monochrome_visuals(model)
+
+    def configure_plots(self):
+        self.rects = [(1022, 336, 1843, 432), (1022, 555, 1843, 644), (1022, 785, 1843, 896)]
+        self.shades = [(WHITE, SILVER), (WHITE, SILVER), (WHITE, SILVER, 207)]
+        self.styles = [(0, 1), (0, 1), (0, 1, 2)]
+
+    def extra_manifest(self):
+        return {}
+
     def __init__(self, results: Path, model_path: Path | None = None):
         self.out = results
         with np.load(results/"telemetry.npz") as archive:
@@ -168,8 +188,9 @@ class Film:
         self.duration = float(self.summary["duration_s"])
         if abs(self.duration-28.) > 1e-12 or self.summary["mode"] not in {"continuous", "current_limit"}:
             raise ValueError("This five-chapter film requires the 28-second motor-driven recorder")
+        self.model_path = model_path
         self.model = build_fixed_ankle_model(model_path)
-        monochrome_visuals(self.model)
+        self.style_model(self.model)
         self.data = mujoco.MjData(self.model)
         self.runtime = MotorRuntime(self.model, names=MOTOR_NAMES)
         self.renderer = None
@@ -198,9 +219,7 @@ class Film:
         self.ylims = [(-tau, tau), (-vel, vel), (-20., 110.)]
         if np.min(self.curves[2]) < -20 or np.max(self.curves[2]) > 110:
             raise ValueError("Mref exceeds the current film axis; do not silently clip the curve")
-        self.rects = [(1022, 336, 1843, 432), (1022, 555, 1843, 644), (1022, 785, 1843, 896)]
-        self.shades = [(WHITE, SILVER), (WHITE, SILVER), (WHITE, SILVER, 207)]
-        self.styles = [(0, 1), (0, 1), (0, 1, 2)]
+        self.configure_plots()
         self.thin = np.unique(np.r_[np.arange(0, len(self.t), 20), len(self.t)-1])
         self.xy = []
         for values, rect, limits in zip(self.curves, self.rects, self.ylims):
@@ -278,7 +297,8 @@ class Film:
             else:
                 draw.ellipse((xx-4, yy-4, xx+4, yy+4), fill=shade)
 
-    def frame(self, k):
+    def replay_state(self, k):
+        """Restore and check one genuine recorded integration state."""
         self.data.qpos[:] = self.z["qpos"][k]
         self.data.qvel[:] = self.z["qvel"][k]
         self.data.ctrl[:] = self.z["control"][k]
@@ -296,6 +316,10 @@ class Film:
         self.errors["Mref"] = max(self.errors["Mref"], float(np.max(np.abs(mref-self.z["Mref"][k]))))
         if self.errors["torque"] > 1e-10 or self.errors["speed"] > 1e-10 or self.errors["Mref"] > 1e-12:
             raise AssertionError(f"Recorded state/telemetry mismatch: {self.errors}")
+        return actual, force, speed
+
+    def frame(self, k):
+        actual, force, speed = self.replay_state(k)
         self.renderer.update_scene(self.data, camera=self.camera)
         scene = Image.fromarray(self.renderer.render()).convert("L")
         im = self.template.copy()
@@ -375,7 +399,7 @@ class Film:
         self.intro(self.frame(0), 1.).save(self.out/"video_intro.png")
         self.outro(self.frame(len(self.t)-1), 1.).save(self.out/"video_outro.png")
         self.frame(int(np.argmin(np.abs(self.t-21.2)))).save(self.out/"video_preview.png")
-        print("Monochrome 1920x1080 preview frames saved.", flush=True)
+        print(f"{self.INPUT_MODE} 1920x1080 preview frames saved ({self.STYLE_ID}).", flush=True)
 
     def frame_record(self, number, section, k):
         z, m = self.z, self.z["Mref"][k]
@@ -386,16 +410,16 @@ class Film:
 
     def render(self):
         started = time.perf_counter()
-        output = self.out/VIDEO_NAME
+        output = self.out/self.VIDEO_NAME
         manifest_path = self.out/"render_manifest.json"
-        manifest_path.write_text(json.dumps({"status": "RUNNING", "video": VIDEO_NAME}), encoding="utf-8")
+        manifest_path.write_text(json.dumps({"status": "RUNNING", "video": self.VIDEO_NAME}), encoding="utf-8")
         rows = []
         writer = imageio.get_writer(str(output), format="FFMPEG", fps=FPS, codec="libx264", quality=None,
                                    macro_block_size=1, ffmpeg_log_level="error",
                                    output_params=["-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p", "-movflags", "+faststart"])
         def append(im, section, k):
-            if im.mode != "L":
-                raise AssertionError("All compositor output must be single-channel grayscale")
+            if im.mode != self.INPUT_MODE:
+                raise AssertionError(f"Compositor output must be {self.INPUT_MODE}")
             writer.append_data(np.asarray(im))
             rows.append(self.frame_record(len(rows), section, k))
         try:
@@ -413,29 +437,32 @@ class Film:
             for i in range(round(OUTRO*FPS)):
                 append(self.outro(base, min(1., (i+1)/12)), "outro", len(self.t)-1)
         except BaseException:
-            manifest_path.write_text(json.dumps({"status": "FAIL", "video": VIDEO_NAME}), encoding="utf-8")
+            manifest_path.write_text(json.dumps({"status": "FAIL", "video": self.VIDEO_NAME}), encoding="utf-8")
             raise
         finally:
             writer.close()
         with (self.out/"video_frame_map.csv").open("w", newline="", encoding="utf-8") as handle:
             csv.writer(handle).writerows([CSV_FIELDS, *rows])
-        manifest = {"schema_version": 1, "status": "PASS", "video": VIDEO_NAME,
+        manifest = {"schema_version": 1, "status": "PASS", "video": self.VIDEO_NAME,
                     "frame_map": "video_frame_map.csv", "width": W, "height": H, "fps": FPS,
                     "frame_count": len(rows), "intro_s": INTRO, "motion_s": self.duration, "outro_s": OUTRO,
-                    "duration_s": len(rows)/FPS, "input_mode": "L", "palette": "black-white-gray only",
+                    "duration_s": len(rows)/FPS, "input_mode": self.INPUT_MODE, "palette": self.PALETTE,
+                    "style_id": self.STYLE_ID, "renderer_file": self.RENDERER_FILE.name,
                     "mode": self.summary["mode"], "source_commit": self.commit,
-                    "renderer_sha256": sha256(Path(__file__)),
+                    "renderer_sha256": sha256(self.RENDERER_FILE),
+                    "shared_renderer_sha256": sha256(Path(__file__)),
                     "telemetry_sha256": sha256(self.out/"telemetry.npz"),
                     "summary_sha256": sha256(self.out/"simulation_summary.json"),
                     "profile": self.spec.as_dict(), "inertia_ledger": self.runtime.inertia_ledger,
                     "max_replay_torque_error_Nm": self.errors["torque"],
                     "max_replay_speed_error_rad_s": self.errors["speed"],
                     "max_replay_Mref_error_kg_m2": self.errors["Mref"],
-                    "max_rendered_channel_spread": 0, "plot_limits": self.ylims,
+                    "max_rendered_channel_spread": 0 if self.INPUT_MODE == "L" else None, "plot_limits": self.ylims,
                     "video_sha256": sha256(output), "elapsed_wall_seconds": time.perf_counter()-started,
                     "codec": "H.264/libx264", "pixel_format": "yuv420p", "audio": "none",
                     "synchronization": "one recorded sample for pose, actual generalized torque, speed, inertia, plot cursor and numeric readout",
                     "scope": "fixed shin, gravity, no contact/external load; reference motor model, not hardware certification"}
+        manifest.update(self.extra_manifest())
         manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         print(json.dumps(manifest, ensure_ascii=True, indent=2), flush=True)
 

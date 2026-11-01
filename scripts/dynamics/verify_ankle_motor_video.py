@@ -1,4 +1,4 @@
-"""Independently audit the new 35-second monochrome motor-telemetry film.
+"""Independently audit 35-second motor-telemetry films and source-mesh fidelity.
 
 Use --results <folder>. No Renderer or reintegration is used. NPZ members are
 cached once; every CSV row and every decoded video frame are checked. A final
@@ -11,6 +11,7 @@ import csv
 from dataclasses import dataclass
 from fractions import Fraction
 import hashlib
+import importlib.util
 import json
 import math
 from pathlib import Path
@@ -34,6 +35,23 @@ FIELDS = (
 MOTOR_NAMES = ("ankleMotor_Left_1", "ankleMotor_Left_2")
 CSV_TIME_TOL, CSV_VALUE_TOL, CSV_MREF_TOL = 1e-9, 1e-9, 1e-11
 REPLAY_TORQUE_TOL, REPLAY_SPEED_TOL, REPLAY_MREF_TOL = 1e-10, 1e-10, 1e-12
+LEGACY_STYLE, LIGHT_STYLE = "monochrome_v1", "light_minimal_mesh_v2"
+LIGHT_MIN_FRAME_YAVG, LIGHT_MIN_MEAN_YAVG = 155., 185.
+
+
+def style_settings(manifest):
+    """Legacy is opt-in L by default; RGB is accepted only for declared v2."""
+    style = manifest.get("style_id", LEGACY_STYLE)
+    require(style in (LEGACY_STYLE, LIGHT_STYLE), f"Unsupported style_id: {style!r}")
+    expected = "L" if style == LEGACY_STYLE else "RGB"
+    require(manifest.get("input_mode") == expected, f"{style}: input_mode must be {expected}")
+    if style == LEGACY_STYLE:
+        require(number(manifest.get("max_rendered_channel_spread"), "channel spread") == 0,
+                "Legacy monochrome renderer reported chromatic pixels")
+    else:
+        require(manifest.get("renderer_file") == "render_ankle_motor_light_video.py", "Light style requires its declared renderer_file")
+        require(isinstance(manifest.get("mesh_geometry"), dict), "Light style requires mesh_geometry audit")
+    return style
 
 
 @dataclass(frozen=True)
@@ -181,9 +199,8 @@ def validate_contract(folder, manifest, summary):
         require(type(manifest.get(key)) is int and manifest[key] == value, f"Manifest {key}: expected {value}")
     for key, expected in (("fps", 30), ("intro_s", 3), ("motion_s", 28), ("outro_s", 4)):
         close(number(manifest.get(key), key), expected, 1e-12, f"Manifest {key}")
-    require(manifest.get("input_mode") == "L", "Renderer input_mode must be L")
+    style = style_settings(manifest)
     require(manifest.get("mode") == summary.get("mode") == "continuous", "Expected continuous operating-cap mode")
-    require(number(manifest.get("max_rendered_channel_spread"), "channel spread") == 0, "Renderer reported chromatic pixels")
     profile = canonical(DEFAULT_MOTOR.as_dict())
     require(canonical(manifest.get("profile")) == profile, "Manifest profile differs from DEFAULT_MOTOR.as_dict()")
     require(canonical(summary.get("motor_profile")) == profile, "Summary profile differs from DEFAULT_MOTOR.as_dict()")
@@ -222,10 +239,156 @@ def validate_contract(folder, manifest, summary):
         require(hashes[path.name] == value, f"{key}: content digest mismatch")
     hashes[frame_map.name] = digest(frame_map)
     hashes["render_manifest.json"] = digest(folder / "render_manifest.json")
-    if "renderer_sha256" in manifest:
-        renderer = ROOT / "scripts/dynamics/render_ankle_motor_video.py"
-        require(renderer.is_file() and digest(renderer) == manifest["renderer_sha256"], "renderer_sha256: source digest mismatch")
+    renderer_name = "render_ankle_motor_light_video.py" if style == LIGHT_STYLE else "render_ankle_motor_video.py"
+    if "renderer_file" in manifest:
+        require(manifest["renderer_file"] == renderer_name, "renderer_file does not match style_id")
+    if style == LIGHT_STYLE or "renderer_sha256" in manifest:
+        renderer = ROOT / "scripts/dynamics" / renderer_name
+        require(renderer.is_file() and digest(renderer) == manifest.get("renderer_sha256"), "renderer_sha256: source digest mismatch")
+    if style == LIGHT_STYLE:
+        shared = ROOT / "scripts/dynamics/render_ankle_motor_video.py"
+        require(shared.is_file() and digest(shared) == manifest.get("shared_renderer_sha256"), "shared_renderer_sha256: base source digest mismatch")
     return video, frame_map, hashes
+
+
+def model_invariants(model):
+    """Snapshot native geometry and plant arrays, excluding visual appearance."""
+    prefixes = ("body_", "jnt_", "dof_", "geom_", "mesh_", "site_", "actuator_", "tendon_", "eq_")
+    visual = {"geom_rgba", "geom_matid", "site_rgba", "tendon_rgba", "tendon_width"}
+    result = {}
+    for name in dir(model):
+        if name in visual or not (name.startswith(prefixes) or name in {"qpos0", "qpos_spring"}):
+            continue
+        value = getattr(model, name)
+        if isinstance(value, np.ndarray):
+            result[name] = value.copy()
+    require({"geom_type", "geom_dataid", "geom_pos", "geom_quat", "geom_size", "mesh_vert", "mesh_face",
+             "body_mass", "body_inertia", "dof_armature", "actuator_gainprm", "actuator_biasprm"}.issubset(result),
+            "Native model lacks required geometry/plant invariant arrays")
+    return result
+
+
+def assert_model_unchanged(model, before):
+    for name, old in before.items():
+        new = getattr(model, name)
+        require(old.shape == new.shape and old.dtype == new.dtype and np.array_equal(old, new, equal_nan=True),
+                f"Visual styling changed native geometry/plant array {name}")
+
+
+def invariant_digest(values):
+    result = hashlib.sha256()
+    for name, array in sorted(values.items()):
+        result.update(name.encode("ascii"))
+        result.update(str(array.dtype).encode("ascii"))
+        result.update(str(array.shape).encode("ascii"))
+        result.update(np.ascontiguousarray(array).tobytes())
+    return result.hexdigest()
+
+
+def body_mesh(model, body_name, asset_name):
+    import mujoco
+    body = model.body(body_name).id
+    asset = model.mesh(asset_name).id
+    geoms = np.flatnonzero((model.geom_bodyid == body) & (model.geom_type == mujoco.mjtGeom.mjGEOM_MESH)
+                           & (model.geom_dataid == asset))
+    require(len(geoms) == 1, f"Expected one original {asset_name} mesh geom on {body_name}")
+    return int(geoms[0]), asset
+
+
+def mesh_arrays(model, asset):
+    va, vn = int(model.mesh_vertadr[asset]), int(model.mesh_vertnum[asset])
+    fa, fn = int(model.mesh_faceadr[asset]), int(model.mesh_facenum[asset])
+    return model.mesh_vert[va:va+vn], model.mesh_face[fa:fa+fn]
+
+
+def validate_mesh_audit(audit, actual):
+    require(isinstance(audit, dict), "Missing mesh geometry evidence")
+    for name in ("body", "mesh_asset", "source_stl_sha256"):
+        require(audit.get(name) == actual[name], f"mesh_geometry.{name}: source mismatch")
+    for name in ("vertex_count", "face_count"):
+        require(type(audit.get(name)) is int and audit[name] == actual[name], f"mesh_geometry.{name}: topology count mismatch")
+    for name in ("source_mesh_alpha", "render_mesh_alpha", "render_shin_alpha"):
+        close(number(audit.get(name), name), actual[name], 1e-7, f"mesh_geometry.{name}")
+    for name in ("geometry_unchanged", "physics_unchanged"):
+        require(audit.get(name) is True, f"mesh_geometry.{name} must be true")
+    box = audit.get("hidden_box")
+    require(isinstance(box, dict) and box.get("name") == "toe_left", "Expected hidden original toe_left collision box")
+    for name in ("source_alpha", "render_alpha"):
+        close(number(box.get(name), name), actual["hidden_box"][name], 1e-7, f"hidden_box.{name}")
+
+
+def verify_source_geometry(manifest):
+    """Independently compare full source mesh, bench mesh and styled bench.
+
+    Compiles via the shared loader; never constructs a Renderer or integrates.
+    Audit booleans alone are insufficient: native array equality and a forward
+    force/acceleration check must also pass.
+    """
+    import mujoco
+    from pndbotics_ankle.mujoco_io import build_fixed_ankle_model, default_model_path, load_mujoco_model, read_mjcf
+    from pndbotics_ankle.mujoco_motor import MotorRuntime
+    source_path = default_model_path()
+    source = load_mujoco_model(source_path)
+    bench = build_fixed_ankle_model(source_path)
+    sg, sm = body_mesh(source, "toeLeft", "toeLeft")
+    bg, bm = body_mesh(bench, "toeLeft", "toeLeft")
+    sv, sf = mesh_arrays(source, sm)
+    bv, bf = mesh_arrays(bench, bm)
+    close(bv, sv, 0, "Original vs bench toeLeft mesh vertices")
+    close(bf, sf, 0, "Original vs bench toeLeft mesh face topology")
+    for field in ("geom_type", "geom_pos", "geom_quat", "geom_size"):
+        close(getattr(bench, field)[bg], getattr(source, field)[sg], 1e-12, f"Original vs bench {field}")
+    for field in ("mesh_pos", "mesh_quat", "mesh_scale"):
+        close(getattr(bench, field)[bm], getattr(source, field)[sm], 1e-12, f"Original vs bench {field}")
+    root = read_mjcf(source_path)
+    asset = root.find("./asset/mesh[@name='toeLeft']")
+    require(asset is not None and asset.get("file"), "Original toeLeft asset source missing")
+    meshdir = root.find("compiler").get("meshdir", "")
+    mesh_path = (source_path.parent / meshdir / asset.get("file")).resolve()
+    require(mesh_path.is_file(), "Original toeLeft.STL not found")
+    original_box, box = source.geom("toe_left").id, bench.geom("toe_left").id
+    require(source.geom_type[original_box] == bench.geom_type[box] == mujoco.mjtGeom.mjGEOM_BOX, "toe_left must remain original collision box")
+    close(source.geom_rgba[original_box, 3], 0., 0, "Original toe_left box must be hidden")
+    close(bench.geom_rgba[box, 3], 0., 0, "Unstyled bench toe_left box must stay hidden")
+    module_path = ROOT / "scripts/dynamics/render_ankle_motor_light_video.py"
+    require(module_path.is_file(), "Light renderer is missing")
+    spec = importlib.util.spec_from_file_location("_pnd_light_video_geometry_audit", module_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    invariants = model_invariants(bench)
+    data = mujoco.MjData(bench)
+    with MotorRuntime(bench, names=MOTOR_NAMES) as runtime:
+        data.qvel[runtime.dof_ids] = [.31, -.24]
+        data.ctrl[runtime.actuator_ids] = [.13, -.17]
+        runtime.forward(data)
+        force, acceleration = data.qfrc_actuator.copy(), data.qacc.copy()
+        generated_audit = module.apply_light_studio(bench, model_path=source_path)
+        assert_model_unchanged(bench, invariants)
+        runtime.forward(data)
+        force_error = close(data.qfrc_actuator, force, 0, "Styling must not change native force")
+        acceleration_error = close(data.qacc, acceleration, 0, "Styling must not change native acceleration")
+    shin, _ = body_mesh(bench, "shinLeft", "shinLeft")
+    actual = {"body": "toeLeft", "mesh_asset": "toeLeft", "source_stl_sha256": digest(mesh_path),
+              "vertex_count": len(sv), "face_count": len(sf),
+              "source_mesh_alpha": float(source.geom_rgba[sg, 3]),
+              "render_mesh_alpha": float(bench.geom_rgba[bg, 3]),
+              "render_shin_alpha": float(bench.geom_rgba[shin, 3]),
+              "hidden_box": {"name": "toe_left", "source_alpha": float(source.geom_rgba[original_box, 3]),
+                             "render_alpha": float(bench.geom_rgba[box, 3])},
+              "geometry_unchanged": True, "physics_unchanged": True}
+    close(actual["source_mesh_alpha"], 1., 0, "Original toe mesh must be opaque")
+    close(actual["render_mesh_alpha"], 1., 0, "Rendered toe must use opaque original mesh")
+    close(actual["render_shin_alpha"], 1., 0, "Rendered shin must be opaque, not X-ray")
+    close(actual["hidden_box"]["render_alpha"], 0., 0, "Rendered collision box must stay invisible")
+    validate_mesh_audit(generated_audit, actual)
+    validate_mesh_audit(manifest.get("mesh_geometry"), actual)
+    actual.update(native_array_count=len(invariants), native_arrays_sha256=invariant_digest(invariants),
+                  original_mesh_vertices_sha256=hashlib.sha256(np.ascontiguousarray(sv).tobytes()).hexdigest(),
+                  original_mesh_faces_sha256=hashlib.sha256(np.ascontiguousarray(sf).tobytes()).hexdigest(),
+                  max_styling_force_error_Nm=force_error, max_styling_acceleration_error=acceleration_error,
+                  original_vs_bench_mesh_exact=True, geometry_and_plant_arrays_unchanged=True)
+    return actual
 
 
 def expected_rows(saved):
@@ -323,7 +486,8 @@ def replay_native(saved, indices, *, time_offset=0.0):
     return {"states": len(indices), "forward_only": True, "max_errors": maximum, "mujoco_version": mujoco.__version__}
 
 
-def parse_signalstats(path, encoding):
+def parse_signalstats(path, encoding, style=LEGACY_STYLE):
+    require(style in (LEGACY_STYLE, LIGHT_STYLE), "Unknown decoded-video style policy")
     records = []
     for line in path.read_text(encoding="utf-8").splitlines():
         match = re.match(r"frame:\s*(\d+)\s+pts:\s*(-?\d+)\s+pts_time:\s*(\S+)", line)
@@ -336,20 +500,43 @@ def parse_signalstats(path, encoding):
             require(key not in records[-1]["values"], f"Duplicate signalstats {key}")
             records[-1]["values"][key] = number(value, f"signalstats {key}")
     require(len(records) == encoding.frames, f"Full decode produced {len(records)} signalstats records, expected {encoding.frames}")
-    maximum_sat, maximum_chroma_delta = 0.0, 0.0
+    maximum_sat, maximum_chroma_delta, chromatic = 0.0, 0.0, 0
+    luma, high = [], []
     for frame, record in enumerate(records):
         require(record["frame"] == frame, "Signalstats frames are missing, repeated or reordered")
         values = record["values"]
-        saturation_zero = values.get("SATMAX") == 0
         keys = ("UMIN", "UMAX", "VMIN", "VMAX")
+        require("SATMAX" in values or all(key in values for key in keys), f"Decoded frame {frame}: no chroma evidence")
+        saturation_zero = values.get("SATMAX") == 0
         neutral = all(key in values and values[key] == 128 for key in keys)
-        require(saturation_zero or neutral, f"Decoded frame {frame} is colored: SATMAX={values.get('SATMAX')}, chroma={[(k,values.get(k)) for k in keys]}")
+        achromatic = (("SATMAX" not in values or saturation_zero)
+                      and (not all(key in values for key in keys) or neutral))
+        if style == LEGACY_STYLE:
+            require(achromatic, f"Decoded frame {frame} is colored: SATMAX={values.get('SATMAX')}, chroma={[(k,values.get(k)) for k in keys]}")
+        else:
+            require(all(key in values for key in ("SATMAX", *keys, "YAVG", "YHIGH")),
+                    f"Decoded frame {frame}: incomplete color/brightness evidence")
+            require(0 <= values["YAVG"] <= 255 and 0 <= values["YHIGH"] <= 255, "Light film must have 8-bit brightness statistics")
+            luma.append(values["YAVG"])
+            high.append(values["YHIGH"])
+        chromatic += int(not achromatic)
         if "SATMAX" in values:
             maximum_sat = max(maximum_sat, values["SATMAX"])
         if all(key in values for key in keys):
             maximum_chroma_delta = max(maximum_chroma_delta, *(abs(values[key]-128) for key in keys))
-    return records, {"frames_checked": len(records), "all_frames_achromatic": True,
-                     "max_SATMAX": maximum_sat, "max_UV_deviation_from_128": maximum_chroma_delta}
+    metrics = {"frames_checked": len(records), "all_frames_achromatic": chromatic == 0,
+               "chromatic_frames": chromatic, "max_SATMAX": maximum_sat,
+               "max_UV_deviation_from_128": maximum_chroma_delta,
+               "policy": "strict achromatic" if style == LEGACY_STYLE else "color allowed; light-background luminance gated"}
+    if style == LIGHT_STYLE:
+        brightness = {"frames_checked": len(luma), "YAVG_min": min(luma), "YAVG_max": max(luma),
+                      "YAVG_mean": float(np.mean(luma)), "YHIGH_min": min(high), "YHIGH_max": max(high),
+                      "minimum_frame_YAVG": LIGHT_MIN_FRAME_YAVG, "minimum_mean_YAVG": LIGHT_MIN_MEAN_YAVG,
+                      "scale": "FFmpeg 8-bit Y; limited-range reference black=16, white=235"}
+        require(brightness["YAVG_min"] >= LIGHT_MIN_FRAME_YAVG, "Light film has a dark frame/background")
+        require(brightness["YAVG_mean"] >= LIGHT_MIN_MEAN_YAVG, "Light film average background is not sufficiently bright")
+        metrics["brightness"] = brightness
+    return records, metrics
 
 
 def parse_showinfo(path, encoding, stats):
@@ -385,7 +572,7 @@ def parse_showinfo(path, encoding, stats):
             "all_frame_pts_exact": True, "video_streams": len(streams)}
 
 
-def audit_encoded(video, work, encoding=EXPECTED, previews=True):
+def audit_encoded(video, work, encoding=EXPECTED, previews=True, style=LEGACY_STYLE):
     """One complete independent decode; importantly NO grayscale conversion."""
     import imageio_ffmpeg
     executable = imageio_ffmpeg.get_ffmpeg_exe()
@@ -406,9 +593,12 @@ def audit_encoded(video, work, encoding=EXPECTED, previews=True):
     with log.open("wb") as handle:
         completed = subprocess.run(command, cwd=work, stdout=subprocess.DEVNULL, stderr=handle, timeout=600)
     require(completed.returncode == 0, f"FFmpeg decode failed, exit {completed.returncode}; inspect {work.name}/decode.log")
-    stats, grayscale = parse_signalstats(work / "signalstats.txt", encoding)
+    stats, color_metrics = parse_signalstats(work / "signalstats.txt", encoding, style)
     stream = parse_showinfo(log, encoding, stats)
-    stream["grayscale"] = grayscale
+    stream["style_id"] = style
+    stream["grayscale" if style == LEGACY_STYLE else "color_statistics"] = color_metrics
+    if style == LIGHT_STYLE:
+        stream["brightness"] = color_metrics["brightness"]
     stream["audit_method"] = "unmodified decoded frames: FFmpeg showinfo + signalstats/metadata; complete stream, not sampling"
     stream["signalstats_sha256"] = digest(work / "signalstats.txt")
     stream["decode_log_sha256"] = digest(log)
@@ -435,6 +625,10 @@ def verify(results):
         result["inputs_sha256"] = hashes
         result["source_commit"] = manifest["source_commit"]
         result["profile"] = DEFAULT_MOTOR.as_dict()
+        result["style_id"] = style_settings(manifest)
+        if result["style_id"] == LIGHT_STYLE:
+            result["stage"] = "source_mesh_geometry"
+            result["mesh_geometry"] = verify_source_geometry(manifest)
         result["stage"] = "telemetry"
         saved, result["telemetry"] = load_telemetry(folder, summary)
         result["stage"] = "frame_map"
@@ -443,7 +637,7 @@ def verify(results):
         result["native_replay"] = replay_native(saved, indices, time_offset=number(summary.get("warmup_s"), "warmup_s"))
         result["stage"] = "full_video_decode"
         work = folder / ("video_qa_" + uuid.uuid4().hex[:12])
-        result["decoded_video"] = audit_encoded(video, work)
+        result["decoded_video"] = audit_encoded(video, work, style=result["style_id"])
         result["audit_directory"] = work.name
         result["stage"] = "input_stability"
         for name, original in hashes.items():
@@ -533,6 +727,21 @@ def self_test():
                     else:
                         with self.assertRaisesRegex(VideoQAError, "colored"):
                             audit_encoded(video, folder/f"{color}-audit", tiny, previews=False)
+
+            def test_light_full_decode_allows_color_on_bright_background(self):
+                tiny = Encoding(64, 48, 30, 3)
+                executable = imageio_ffmpeg.get_ffmpeg_exe()
+                video = folder/"light-color.mp4"
+                command = [executable, "-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+                           "color=c=white:s=64x48:r=30,drawbox=x=8:y=8:w=12:h=12:c=blue:t=fill",
+                           "-frames:v", "3", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(video)]
+                subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=30)
+                report = audit_encoded(video, folder/"light-color-audit", tiny, previews=False, style=LIGHT_STYLE)
+                self.assertFalse(report["color_statistics"]["all_frames_achromatic"])
+                self.assertEqual(report["color_statistics"]["chromatic_frames"], 3)
+                self.assertEqual(report["brightness"]["frames_checked"], 3)
+                self.assertGreater(report["brightness"]["YAVG_mean"], LIGHT_MIN_MEAN_YAVG)
+                self.assertNotIn("grayscale", report)
 
             def test_one_colored_last_frame_and_missing_records(self):
                 stats = folder/"synthetic-signalstats.txt"

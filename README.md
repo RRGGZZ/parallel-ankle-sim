@@ -58,17 +58,19 @@ The [executed validation record](docs/motor_model_validation.md) documents **81 
 
 The original model viewer remains a geometric visualization, and the original motor-angle sweep still drives the passive ankle with external test torques. Neither is the new motor-capability validation. Pinocchio scripts remain reduced-order research tools, not T–N-enforced motor simulators.
 
-### Updated monochrome motor video
+### Motor video: original mesh, light minimal dashboard
 
-The [monochrome renderer](scripts/dynamics/render_ankle_motor_video.py) uses the current motor-driven recorder, shared loader and MotorRuntime, not the old 0.02-armature video pipeline. Its entire dashboard and 3D scene are black/white/gray; motor identities use brightness, line style and markers. The 35-second 1080p/30-fps film contains a 3-second intro, the unwarped 28-second recorded trajectory, and a 4-second result card. Every pose, number and cursor shares one recorded sample. The [video verifier](scripts/dynamics/verify_ankle_motor_video.py) audits the frame map, native state replay and decoded saturation for **every frame**. See the [Chinese rendering and reproduction guide](docs/monochrome_motor_video.md).
+The preferred [light renderer](scripts/dynamics/render_ankle_motor_light_video.py) keeps the original CAD mesh and its visibility, with the motion at left and parameters/color traces at right. The original invisible `toe_left` **collision box stays invisible**; it is not a replacement foot mesh. Mesh vertices/faces, local transforms and physical arrays are checked unchanged. The shin is opaque, the set is light neutral, and motor traces use blue/orange with separate inertia colors. See the [Chinese light-video guide](docs/light_motor_video.md).
+
+The 35-second 1080p/30-fps film uses the current motor-driven recorder, shared loader and MotorRuntime: 3 seconds of intro, the unwarped 28-second recorded trajectory and a 4-second result card. Each pose, number and cursor shares one sample. The [video verifier](scripts/dynamics/verify_ankle_motor_video.py) audits all 1,050 frame-map rows, 841 native states, full-stream timing and declared-style metrics. Light RGB and historical monochrome have **different** color checks. The [legacy monochrome renderer](scripts/dynamics/render_ankle_motor_video.py) also contains the hidden-proxy alpha fix; the previously delivered dark film remains historical, not the recommended presentation.
 
 ```bash
 python -m pip install -e ".[video,test]"
 python scripts/configure_ankle_motor.py --check
-python scripts/dynamics/ankle_motor_simulation.py --out artifacts/monochrome_video
-python scripts/dynamics/verify_motor_model.py --results artifacts/monochrome_video
-python scripts/dynamics/render_ankle_motor_video.py --results artifacts/monochrome_video
-python scripts/dynamics/verify_ankle_motor_video.py --results artifacts/monochrome_video
+python scripts/dynamics/ankle_motor_simulation.py --out artifacts/mesh_light_video
+python scripts/dynamics/verify_motor_model.py --results artifacts/mesh_light_video
+python scripts/dynamics/render_ankle_motor_light_video.py --results artifacts/mesh_light_video
+python scripts/dynamics/verify_ankle_motor_video.py --results artifacts/mesh_light_video
 ```
 
 ## 1. Project Overview

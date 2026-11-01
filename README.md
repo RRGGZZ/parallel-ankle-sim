@@ -73,6 +73,18 @@ python scripts/dynamics/render_ankle_motor_light_video.py --results artifacts/me
 python scripts/dynamics/verify_ankle_motor_video.py --results artifacts/mesh_light_video
 ```
 
+### Synthetic grey-box parameter recovery (not hardware calibration)
+
+The [synthetic identification benchmark](<scripts/dynamics/synthetic_ankle_identification.py>) uses the original fixed-shin parallel ankle to recover six output-shaft parameters: inertia, viscous resistance and smooth Coulomb resistance on each motor. The [measurement-only estimator](<src/pndbotics_ankle/identification.py>) uses filtered encoder positions and window-integrated torque balance, with explicit ZOH drive inputs, physical bounds and rank/conditioning checks. **An additional virtual transmission-load torque sensor is assumed**; this is not a claim that the existing hardware provides that measurement, nor a sensor-free full-ankle identification.
+
+The executed benchmark has 28 s of training, a different 20 s held-out trajectory, an asymmetric-inertia counterfactual, and 50 measurement-noise realizations. The nominal noisy run recovered all six parameters within **0.393%**; full-native held-out free-run Roll/Pitch RMSE was **0.00380 / 0.00528 degrees**, versus **9.187 / 6.157 degrees** for the wrong initial parameters. Those predictions use frozen actual torque inputs, not a position controller that could hide parameter error. The friction values are deliberately invented experiment values; the canonical motor profile, original mesh and robot XML are unchanged. See the [Chinese scope, sensing assumptions and reproduction guide](<docs/synthetic_identification.md>).
+
+```bash
+python -m pip install -e ".[test]"
+python scripts/dynamics/synthetic_ankle_identification.py --out artifacts/synthetic_id
+python scripts/dynamics/verify_synthetic_identification.py --results artifacts/synthetic_id
+```
+
 ## 1. Project Overview
 
 This project studies the **kinematics, statics, and dynamics** characteristics of a dual-motor parallel ankle mechanism, with the analytical model centralized in `src/pndbotics_ankle` and cross-checked in MuJoCo / Pinocchio environments.

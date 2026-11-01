@@ -58,6 +58,19 @@ The [executed validation record](docs/motor_model_validation.md) documents **81 
 
 The original model viewer remains a geometric visualization, and the original motor-angle sweep still drives the passive ankle with external test torques. Neither is the new motor-capability validation. Pinocchio scripts remain reduced-order research tools, not T–N-enforced motor simulators.
 
+### Updated monochrome motor video
+
+The [monochrome renderer](scripts/dynamics/render_ankle_motor_video.py) uses the current motor-driven recorder, shared loader and MotorRuntime, not the old 0.02-armature video pipeline. Its entire dashboard and 3D scene are black/white/gray; motor identities use brightness, line style and markers. The 35-second 1080p/30-fps film contains a 3-second intro, the unwarped 28-second recorded trajectory, and a 4-second result card. Every pose, number and cursor shares one recorded sample. The [video verifier](scripts/dynamics/verify_ankle_motor_video.py) audits the frame map, native state replay and decoded saturation for **every frame**. See the [Chinese rendering and reproduction guide](docs/monochrome_motor_video.md).
+
+```bash
+python -m pip install -e ".[video,test]"
+python scripts/configure_ankle_motor.py --check
+python scripts/dynamics/ankle_motor_simulation.py --out artifacts/monochrome_video
+python scripts/dynamics/verify_motor_model.py --results artifacts/monochrome_video
+python scripts/dynamics/render_ankle_motor_video.py --results artifacts/monochrome_video
+python scripts/dynamics/verify_ankle_motor_video.py --results artifacts/monochrome_video
+```
+
 ## 1. Project Overview
 
 This project studies the **kinematics, statics, and dynamics** characteristics of a dual-motor parallel ankle mechanism, with the analytical model centralized in `src/pndbotics_ankle` and cross-checked in MuJoCo / Pinocchio environments.

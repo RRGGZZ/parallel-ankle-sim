@@ -42,6 +42,13 @@ test = [
     "mujoco>=3.9,<4",
     "matplotlib>=3.8,<4",
 ]
+video = [
+    "mujoco>=3.9,<4",
+    "matplotlib>=3.8,<4",
+    "Pillow>=11,<13",
+    "imageio>=2.37,<3",
+    "imageio-ffmpeg>=0.6,<1",
+]
 
 [tool.setuptools.package-data]
 pndbotics_ankle = ["data/*.json"]
